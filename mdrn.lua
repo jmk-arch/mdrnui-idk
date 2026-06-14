@@ -93,11 +93,13 @@ CleanUI.Defaults = {
     Font = Enum.Font.Gotham,
     FontMedium = Enum.Font.GothamMedium,
     FontBold = Enum.Font.GothamBold,
-    AnimationFast = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-    AnimationNormal = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-    AnimationSlow = TweenInfo.new(0.28, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-    AnimationPage = TweenInfo.new(0.32, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
-    AnimationSoft = TweenInfo.new(0.22, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
+    -- Fast timings keep the UI smooth without feeling delayed.
+    AnimationFast = TweenInfo.new(0.07, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+    AnimationNormal = TweenInfo.new(0.11, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+    AnimationSlow = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+    AnimationPage = TweenInfo.new(0.16, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
+    AnimationSoft = TweenInfo.new(0.12, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
+    AnimationOpen = TweenInfo.new(0.22, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
 }
 
 ---------------------------------------------------------------------
@@ -437,10 +439,18 @@ function CleanUI:CreateWindow(options: {[string]: any}?)
         Parent = screenGui,
     })
 
-    local main = create("Frame", {
+    local targetPosition = options.Position or CleanUI.Defaults.WindowPosition
+
+    local main = create("CanvasGroup", {
         Name = "MainWindow",
         Size = options.Size or CleanUI.Defaults.WindowSize,
-        Position = options.Position or CleanUI.Defaults.WindowPosition,
+        Position = UDim2.new(
+            targetPosition.X.Scale,
+            targetPosition.X.Offset,
+            targetPosition.Y.Scale,
+            targetPosition.Y.Offset + 18
+        ),
+        GroupTransparency = 1,
         AnchorPoint = Vector2.new(0.5, 0.5),
         -- The main rounded frame itself owns the left/sidebar background.
         -- This avoids the common Roblox UICorner issue where a child sidebar
@@ -694,11 +704,21 @@ function CleanUI:CreateWindow(options: {[string]: any}?)
         Maid = Maid.new(),
         Visible = true,
         SearchText = "",
+        RestPosition = targetPosition,
     }, Window)
 
     object:_bindWindowDrag(topbar)
     object:_bindSearch()
     object:_bindConfigDropdown()
+
+    -- Smooth first-run opening animation.
+    tween(backgroundDim, CleanUI.Defaults.AnimationOpen, {
+        BackgroundTransparency = 0.42,
+    })
+    tween(main, CleanUI.Defaults.AnimationOpen, {
+        Position = targetPosition,
+        GroupTransparency = 0,
+    })
 
     return object
 end
@@ -924,15 +944,45 @@ function Window:Notify(options: {[string]: any}?)
         Parent = card,
     })
 
+    local progressBack = create("Frame", {
+        Name = "ProgressBack",
+        Size = UDim2.new(1, 0, 0, 3),
+        BackgroundColor3 = Color3.fromRGB(37, 45, 58),
+        BorderSizePixel = 0,
+        ZIndex = 1002,
+        Parent = card,
+    })
+
+    addCorner(progressBack, 2)
+
+    local progressFill = create("Frame", {
+        Name = "ProgressFill",
+        Size = UDim2.fromScale(1, 1),
+        BackgroundColor3 = Color3.fromRGB(235, 238, 244),
+        BorderSizePixel = 0,
+        ZIndex = 1003,
+        Parent = progressBack,
+    })
+
+    addCorner(progressFill, 2)
+
     layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
         card.Size = UDim2.fromOffset(340, layout.AbsoluteContentSize.Y + 28)
     end)
 
-    card.Position = UDim2.fromOffset(26, 0)
+    card.Position = UDim2.fromOffset(24, 0)
     tween(card, CleanUI.Defaults.AnimationSoft, {
         GroupTransparency = 0,
         Position = UDim2.fromOffset(0, 0),
     })
+
+    if duration and duration > 0 then
+        tween(progressFill, TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.Out), {
+            Size = UDim2.fromScale(0, 1),
+        })
+    else
+        progressBack.Visible = false
+    end
 
     local closed = false
     local function close()
@@ -946,7 +996,7 @@ function Window:Notify(options: {[string]: any}?)
             Position = UDim2.fromOffset(30, 0),
         })
 
-        task.delay(0.24, function()
+        task.delay(0.14, function()
             if card then
                 card:Destroy()
             end
@@ -964,8 +1014,51 @@ function Window:Notify(options: {[string]: any}?)
 end
 
 function Window:SetVisible(visible: boolean)
+    if self.Visible == visible then
+        return
+    end
+
     self.Visible = visible
-    self.Gui.Enabled = visible
+
+    if visible then
+        self.Gui.Enabled = true
+        local targetPosition = self.RestPosition or self.Main.Position
+        self.Main.Position = UDim2.new(
+            targetPosition.X.Scale,
+            targetPosition.X.Offset,
+            targetPosition.Y.Scale,
+            targetPosition.Y.Offset + 14
+        )
+        setGroupFade(self.Main, 1)
+
+        tween(self.BackgroundDim, CleanUI.Defaults.AnimationOpen, {
+            BackgroundTransparency = 0.42,
+        })
+        tween(self.Main, CleanUI.Defaults.AnimationOpen, {
+            Position = targetPosition,
+            GroupTransparency = 0,
+        })
+    else
+        self.RestPosition = self.Main.Position
+        tween(self.BackgroundDim, CleanUI.Defaults.AnimationFast, {
+            BackgroundTransparency = 1,
+        })
+        tween(self.Main, CleanUI.Defaults.AnimationFast, {
+            Position = UDim2.new(
+                self.RestPosition.X.Scale,
+                self.RestPosition.X.Offset,
+                self.RestPosition.Y.Scale,
+                self.RestPosition.Y.Offset + 10
+            ),
+            GroupTransparency = 1,
+        })
+
+        task.delay(0.09, function()
+            if not self.Visible and self.Gui then
+                self.Gui.Enabled = false
+            end
+        end)
+    end
 end
 
 function Window:ToggleVisible()
@@ -1134,13 +1227,12 @@ function Window:SelectTab(tab: any)
             TextColor3 = CleanUI.Theme.Text,
         })
 
-        -- Fade only. No side slide, because the old slide could look like
-        -- the page was dragging sideways when switching tabs quickly.
+        -- Smooth fade with a tiny vertical movement. No horizontal slide.
         oldTab.PageGroup.Visible = true
         oldTab.PageGroup.Position = UDim2.fromOffset(0, 0)
-        tweenPageGroup(oldTab.PageGroup, UDim2.fromOffset(0, 0), 1)
+        tweenPageGroup(oldTab.PageGroup, UDim2.fromOffset(0, 6), 1)
 
-        task.delay(0.24, function()
+        task.delay(0.13, function()
             if oldTab.TransitionToken == token and self.CurrentTab ~= oldTab then
                 oldTab.PageGroup.Visible = false
                 oldTab.PageGroup.Position = UDim2.fromOffset(0, 0)
@@ -1151,7 +1243,7 @@ function Window:SelectTab(tab: any)
 
     tab.TransitionToken += 1
     tab.PageGroup.Visible = true
-    tab.PageGroup.Position = UDim2.fromOffset(0, 0)
+    tab.PageGroup.Position = oldTab and UDim2.fromOffset(0, 8) or UDim2.fromOffset(0, 0)
     setGroupFade(tab.PageGroup, oldTab and 1 or 0)
 
     tab.Button.BackgroundColor3 = CleanUI.Theme.Selected
@@ -1259,7 +1351,7 @@ local function createHeaderBindMenu(section: any, anchorButton: GuiButton)
 
     local menu = create("Frame", {
         Name = section.Title .. "HeaderBindMenu",
-        Size = UDim2.fromOffset(306, 0),
+        Size = UDim2.fromOffset(304, 0),
         Position = UDim2.fromOffset(0, 0),
         BackgroundColor3 = Color3.fromRGB(14, 19, 27),
         BorderSizePixel = 0,
@@ -1270,7 +1362,7 @@ local function createHeaderBindMenu(section: any, anchorButton: GuiButton)
     })
 
     addCorner(menu, 14)
-    addStroke(menu, Color3.fromRGB(30, 39, 51), 0, 1)
+    addStroke(menu, Color3.fromRGB(29, 37, 48), 0, 1)
     addPadding(menu, 28, 18, 18, 18)
 
     local menuLayout = addList(menu, 16, false)
@@ -1288,7 +1380,7 @@ local function createHeaderBindMenu(section: any, anchorButton: GuiButton)
         Size = UDim2.new(0, 92, 1, 0),
         BackgroundTransparency = 1,
         Text = "Key",
-        TextColor3 = Color3.fromRGB(208, 213, 221),
+        TextColor3 = Color3.fromRGB(211, 216, 224),
         TextSize = 27,
         Font = CleanUI.Defaults.FontMedium,
         TextXAlignment = Enum.TextXAlignment.Left,
@@ -1296,31 +1388,30 @@ local function createHeaderBindMenu(section: any, anchorButton: GuiButton)
         Parent = topRow,
     })
 
-    local resetButton = create("TextButton", {
+    local resetButton = create("ImageButton", {
         Name = "ResetButton",
-        Size = UDim2.fromOffset(52, 58),
-        Position = UDim2.new(0, 108, 0, 0),
+        Size = UDim2.fromOffset(44, 44),
+        Position = UDim2.new(0, 114, 0, 7),
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
         AutoButtonColor = false,
-        Text = "C",
-        TextColor3 = CleanUI.Theme.Text,
-        TextSize = 28,
-        Font = CleanUI.Defaults.FontMedium,
+        Image = "rbxassetid://7734051052",
+        ImageColor3 = Color3.fromRGB(232, 236, 244),
+        ScaleType = Enum.ScaleType.Fit,
         ZIndex = 322,
         Parent = topRow,
     })
 
     local keyButton = create("TextButton", {
         Name = "KeyButton",
-        Size = UDim2.fromOffset(86, 56),
-        Position = UDim2.new(1, -86, 0, 1),
+        Size = UDim2.fromOffset(84, 54),
+        Position = UDim2.new(1, -84, 0, 1),
         BackgroundColor3 = Color3.fromRGB(17, 23, 32),
         BorderSizePixel = 0,
         AutoButtonColor = false,
         Text = keyDisplayName(selectedInput),
         TextColor3 = CleanUI.Theme.Text,
-        TextSize = 26,
+        TextSize = 25,
         Font = CleanUI.Defaults.FontMedium,
         ZIndex = 322,
         Parent = topRow,
@@ -1400,9 +1491,9 @@ local function createHeaderBindMenu(section: any, anchorButton: GuiButton)
     end
 
     local function updateMenuPosition()
-        local base = getOffsetInside(window.Main, anchorButton, -282, 40)
-        local x = math.max(10, math.min(base.X.Offset, window.Main.AbsoluteSize.X - 326))
-        local y = math.max(10, math.min(base.Y.Offset, window.Main.AbsoluteSize.Y - 264))
+        local base = getOffsetInside(window.Main, anchorButton, -280, 38)
+        local x = math.max(10, math.min(base.X.Offset, window.Main.AbsoluteSize.X - 324))
+        local y = math.max(10, math.min(base.Y.Offset, window.Main.AbsoluteSize.Y - 268))
         menu.Position = UDim2.fromOffset(x, y)
     end
 
@@ -1466,7 +1557,7 @@ local function createHeaderBindMenu(section: any, anchorButton: GuiButton)
         keyButton.Text = keyDisplayName(selectedInput)
         clearOutsideConnections()
         tween(menu, CleanUI.Defaults.AnimationFast, {
-            Size = UDim2.fromOffset(306, 0),
+            Size = UDim2.fromOffset(304, 0),
         })
 
         task.delay(0.14, function()
@@ -1514,12 +1605,12 @@ local function createHeaderBindMenu(section: any, anchorButton: GuiButton)
         updateMenuPosition()
         menuOpen = true
         menu.Visible = true
-        menu.Size = UDim2.fromOffset(306, 0)
+        menu.Size = UDim2.fromOffset(304, 0)
         setZIndexRecursive(menu, 320)
         repaintModes()
 
         tween(menu, CleanUI.Defaults.AnimationNormal, {
-            Size = UDim2.fromOffset(306, 254),
+            Size = UDim2.fromOffset(304, 248),
         })
 
         clearOutsideConnections()
@@ -1555,7 +1646,7 @@ local function createHeaderBindMenu(section: any, anchorButton: GuiButton)
         hoverTicket += 1
         local currentTicket = hoverTicket
 
-        task.delay(0.12, function()
+        task.delay(0.07, function()
             if currentTicket ~= hoverTicket then
                 return
             end
@@ -1655,11 +1746,19 @@ local function createHeaderBindMenu(section: any, anchorButton: GuiButton)
         acceptInput = false
         keyButton.Text = "..."
 
-        task.delay(0.12, function()
+        task.delay(0.06, function()
             if listening then
                 acceptInput = true
             end
         end)
+    end)
+
+    resetButton.MouseEnter:Connect(function()
+        tween(resetButton, CleanUI.Defaults.AnimationFast, { ImageColor3 = Color3.fromRGB(255, 255, 255) })
+    end)
+
+    resetButton.MouseLeave:Connect(function()
+        tween(resetButton, CleanUI.Defaults.AnimationFast, { ImageColor3 = Color3.fromRGB(232, 236, 244) })
     end)
 
     resetButton.MouseButton1Click:Connect(function()
@@ -2978,7 +3077,7 @@ function Section:AddKeybind(text: string, defaultKey: any?, callback: any)
         acceptInput = false
         button.Text = "..."
 
-        task.delay(0.12, function()
+        task.delay(0.06, function()
             if listening then
                 acceptInput = true
             end
