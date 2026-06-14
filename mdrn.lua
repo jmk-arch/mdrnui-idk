@@ -40,7 +40,7 @@ local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
 local CleanUI = {}
 CleanUI.__index = CleanUI
-CleanUI.Version = "1.3.0-fade-tabs-header-bind-popup"
+CleanUI.Version = "1.3.1-bind-hover-exact"
 CleanUI.IsUiOnly = true
 
 ---------------------------------------------------------------------
@@ -1229,9 +1229,9 @@ local function createHeaderBindMenu(section: any, anchorButton: GuiButton)
 
     local mini = create("Frame", {
         Name = section.Title .. "HeaderBindMini",
-        Size = UDim2.fromOffset(70, 70),
+        Size = UDim2.fromOffset(72, 72),
         Position = UDim2.fromOffset(0, 0),
-        BackgroundColor3 = Color3.fromRGB(31, 35, 43),
+        BackgroundColor3 = Color3.fromRGB(29, 34, 43),
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
         ClipsDescendants = true,
@@ -1240,8 +1240,8 @@ local function createHeaderBindMenu(section: any, anchorButton: GuiButton)
         Parent = overlay,
     })
 
-    addCorner(mini, 16)
-    addStroke(mini, Color3.fromRGB(40, 46, 55), 0, 1)
+    addCorner(mini, 17)
+    addStroke(mini, Color3.fromRGB(35, 43, 54), 0, 1)
 
     local miniButton = create("TextButton", {
         Name = "OpenBindMenu",
@@ -1251,7 +1251,7 @@ local function createHeaderBindMenu(section: any, anchorButton: GuiButton)
         AutoButtonColor = false,
         Text = "...",
         TextColor3 = CleanUI.Theme.Text,
-        TextSize = 28,
+        TextSize = 30,
         Font = CleanUI.Defaults.FontBold,
         ZIndex = 301,
         Parent = mini,
@@ -1259,9 +1259,9 @@ local function createHeaderBindMenu(section: any, anchorButton: GuiButton)
 
     local menu = create("Frame", {
         Name = section.Title .. "HeaderBindMenu",
-        Size = UDim2.fromOffset(304, 0),
+        Size = UDim2.fromOffset(306, 0),
         Position = UDim2.fromOffset(0, 0),
-        BackgroundColor3 = Color3.fromRGB(17, 22, 29),
+        BackgroundColor3 = Color3.fromRGB(14, 19, 27),
         BorderSizePixel = 0,
         ClipsDescendants = true,
         Visible = false,
@@ -1270,14 +1270,14 @@ local function createHeaderBindMenu(section: any, anchorButton: GuiButton)
     })
 
     addCorner(menu, 14)
-    addStroke(menu, Color3.fromRGB(35, 42, 52), 0, 1)
-    addPadding(menu, 24, 18, 18, 18)
+    addStroke(menu, Color3.fromRGB(30, 39, 51), 0, 1)
+    addPadding(menu, 28, 18, 18, 18)
 
-    local menuLayout = addList(menu, 14, false)
+    local menuLayout = addList(menu, 16, false)
 
     local topRow = create("Frame", {
         Name = "TopRow",
-        Size = UDim2.new(1, 0, 0, 48),
+        Size = UDim2.new(1, 0, 0, 58),
         BackgroundTransparency = 1,
         ZIndex = 321,
         Parent = menu,
@@ -1285,11 +1285,11 @@ local function createHeaderBindMenu(section: any, anchorButton: GuiButton)
 
     create("TextLabel", {
         Name = "KeyLabel",
-        Size = UDim2.new(0, 86, 1, 0),
+        Size = UDim2.new(0, 92, 1, 0),
         BackgroundTransparency = 1,
         Text = "Key",
-        TextColor3 = CleanUI.Theme.TextDim,
-        TextSize = 26,
+        TextColor3 = Color3.fromRGB(208, 213, 221),
+        TextSize = 27,
         Font = CleanUI.Defaults.FontMedium,
         TextXAlignment = Enum.TextXAlignment.Left,
         ZIndex = 322,
@@ -1298,14 +1298,14 @@ local function createHeaderBindMenu(section: any, anchorButton: GuiButton)
 
     local resetButton = create("TextButton", {
         Name = "ResetButton",
-        Size = UDim2.fromOffset(48, 48),
-        Position = UDim2.new(0, 96, 0, 0),
+        Size = UDim2.fromOffset(52, 58),
+        Position = UDim2.new(0, 108, 0, 0),
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
         AutoButtonColor = false,
         Text = "C",
         TextColor3 = CleanUI.Theme.Text,
-        TextSize = 25,
+        TextSize = 28,
         Font = CleanUI.Defaults.FontMedium,
         ZIndex = 322,
         Parent = topRow,
@@ -1313,26 +1313,26 @@ local function createHeaderBindMenu(section: any, anchorButton: GuiButton)
 
     local keyButton = create("TextButton", {
         Name = "KeyButton",
-        Size = UDim2.fromOffset(86, 48),
-        Position = UDim2.new(1, -86, 0, 0),
-        BackgroundColor3 = Color3.fromRGB(20, 26, 34),
+        Size = UDim2.fromOffset(86, 56),
+        Position = UDim2.new(1, -86, 0, 1),
+        BackgroundColor3 = Color3.fromRGB(17, 23, 32),
         BorderSizePixel = 0,
         AutoButtonColor = false,
         Text = keyDisplayName(selectedInput),
         TextColor3 = CleanUI.Theme.Text,
-        TextSize = 24,
+        TextSize = 26,
         Font = CleanUI.Defaults.FontMedium,
         ZIndex = 322,
         Parent = topRow,
     })
 
     addCorner(keyButton, 10)
-    addStroke(keyButton, Color3.fromRGB(36, 44, 56), 0, 1)
+    addStroke(keyButton, Color3.fromRGB(29, 38, 50), 0, 1)
 
     local separator = create("Frame", {
         Name = "Separator",
         Size = UDim2.new(1, 0, 0, 1),
-        BackgroundColor3 = Color3.fromRGB(34, 41, 51),
+        BackgroundColor3 = Color3.fromRGB(30, 39, 51),
         BorderSizePixel = 0,
         ZIndex = 321,
         Parent = menu,
@@ -1341,7 +1341,8 @@ local function createHeaderBindMenu(section: any, anchorButton: GuiButton)
     local function makeModeRow(title: string)
         local row = create("TextButton", {
             Name = title .. "ModeRow",
-            Size = UDim2.new(1, 0, 0, 46),
+            Size = UDim2.new(1, 0, 0, 50),
+            BackgroundColor3 = Color3.fromRGB(20, 26, 35),
             BackgroundTransparency = 1,
             BorderSizePixel = 0,
             AutoButtonColor = false,
@@ -1350,51 +1351,48 @@ local function createHeaderBindMenu(section: any, anchorButton: GuiButton)
             Parent = menu,
         })
 
+        addCorner(row, 8)
+
         local circle = create("Frame", {
             Name = "Circle",
-            Size = UDim2.fromOffset(34, 34),
-            Position = UDim2.fromOffset(0, 6),
+            Size = UDim2.fromOffset(36, 36),
+            Position = UDim2.fromOffset(0, 7),
             BackgroundTransparency = 1,
             BorderSizePixel = 0,
             ZIndex = 322,
             Parent = row,
         })
 
-        addCorner(circle, 17)
-        addStroke(circle, Color3.fromRGB(37, 45, 57), 0, 3)
+        addCorner(circle, 18)
+        local circleStroke = addStroke(circle, Color3.fromRGB(35, 44, 58), 0, 3)
 
-        local dot = create("Frame", {
-            Name = "Dot",
-            Size = UDim2.fromOffset(22, 22),
-            Position = UDim2.fromOffset(6, 6),
-            BackgroundColor3 = Color3.fromRGB(235, 238, 244),
-            BackgroundTransparency = 1,
-            BorderSizePixel = 0,
-            ZIndex = 323,
-            Parent = circle,
-        })
-
-        addCorner(dot, 11)
-
-        create("TextLabel", {
+        local textLabel = create("TextLabel", {
             Name = "Text",
-            Size = UDim2.new(1, -54, 1, 0),
+            Size = UDim2.new(1, -56, 1, 0),
             Position = UDim2.fromOffset(56, 0),
             BackgroundTransparency = 1,
             Text = title,
-            TextColor3 = CleanUI.Theme.TextDim,
-            TextSize = 25,
+            TextColor3 = Color3.fromRGB(208, 213, 221),
+            TextSize = 26,
             Font = CleanUI.Defaults.FontMedium,
             TextXAlignment = Enum.TextXAlignment.Left,
             ZIndex = 322,
             Parent = row,
         })
 
-        return row, circle, dot
+        row.MouseEnter:Connect(function()
+            tween(row, CleanUI.Defaults.AnimationSoft, { BackgroundTransparency = 0.78 })
+        end)
+
+        row.MouseLeave:Connect(function()
+            tween(row, CleanUI.Defaults.AnimationSoft, { BackgroundTransparency = 1 })
+        end)
+
+        return row, circle, circleStroke, textLabel
     end
 
-    local toggleRow, toggleCircle, toggleDot = makeModeRow("Toggle")
-    local holdRow, holdCircle, holdDot = makeModeRow("Hold")
+    local toggleRow, toggleCircle, toggleStroke, toggleText = makeModeRow("Toggle")
+    local holdRow, holdCircle, holdStroke, holdText = makeModeRow("Hold")
 
     local function updateMiniPosition()
         local pos = getOffsetInside(window.Main, anchorButton, -12, -10)
@@ -1402,9 +1400,9 @@ local function createHeaderBindMenu(section: any, anchorButton: GuiButton)
     end
 
     local function updateMenuPosition()
-        local base = getOffsetInside(window.Main, anchorButton, -280, 40)
-        local x = math.max(10, math.min(base.X.Offset, window.Main.AbsoluteSize.X - 324))
-        local y = math.max(10, math.min(base.Y.Offset, window.Main.AbsoluteSize.Y - 232))
+        local base = getOffsetInside(window.Main, anchorButton, -282, 40)
+        local x = math.max(10, math.min(base.X.Offset, window.Main.AbsoluteSize.X - 326))
+        local y = math.max(10, math.min(base.Y.Offset, window.Main.AbsoluteSize.Y - 264))
         menu.Position = UDim2.fromOffset(x, y)
     end
 
@@ -1415,17 +1413,19 @@ local function createHeaderBindMenu(section: any, anchorButton: GuiButton)
     local function repaintModes()
         local isToggle = mode == "Toggle"
 
-        tween(toggleCircle, CleanUI.Defaults.AnimationSoft, {
-            BackgroundTransparency = isToggle and 0.1 or 1,
+        tween(toggleStroke, CleanUI.Defaults.AnimationSoft, {
+            Color = isToggle and Color3.fromRGB(236, 239, 245) or Color3.fromRGB(35, 44, 58),
+            Thickness = isToggle and 5 or 3,
         })
-        tween(toggleDot, CleanUI.Defaults.AnimationSoft, {
-            BackgroundTransparency = isToggle and 0 or 1,
+        tween(holdStroke, CleanUI.Defaults.AnimationSoft, {
+            Color = (not isToggle) and Color3.fromRGB(236, 239, 245) or Color3.fromRGB(35, 44, 58),
+            Thickness = (not isToggle) and 5 or 3,
         })
-        tween(holdCircle, CleanUI.Defaults.AnimationSoft, {
-            BackgroundTransparency = (not isToggle) and 0.1 or 1,
+        tween(toggleText, CleanUI.Defaults.AnimationSoft, {
+            TextColor3 = isToggle and Color3.fromRGB(235, 238, 244) or Color3.fromRGB(197, 203, 212),
         })
-        tween(holdDot, CleanUI.Defaults.AnimationSoft, {
-            BackgroundTransparency = (not isToggle) and 0 or 1,
+        tween(holdText, CleanUI.Defaults.AnimationSoft, {
+            TextColor3 = (not isToggle) and Color3.fromRGB(235, 238, 244) or Color3.fromRGB(197, 203, 212),
         })
     end
 
@@ -1444,13 +1444,13 @@ local function createHeaderBindMenu(section: any, anchorButton: GuiButton)
         miniOpen = false
         tween(mini, CleanUI.Defaults.AnimationFast, {
             BackgroundTransparency = 1,
-            Size = UDim2.fromOffset(58, 58),
+            Size = UDim2.fromOffset(56, 56),
         })
 
         task.delay(0.13, function()
             if not miniOpen then
                 mini.Visible = false
-                mini.Size = UDim2.fromOffset(70, 70)
+                mini.Size = UDim2.fromOffset(72, 72)
             end
         end)
     end
@@ -1466,7 +1466,7 @@ local function createHeaderBindMenu(section: any, anchorButton: GuiButton)
         keyButton.Text = keyDisplayName(selectedInput)
         clearOutsideConnections()
         tween(menu, CleanUI.Defaults.AnimationFast, {
-            Size = UDim2.fromOffset(304, 0),
+            Size = UDim2.fromOffset(306, 0),
         })
 
         task.delay(0.14, function()
@@ -1481,13 +1481,13 @@ local function createHeaderBindMenu(section: any, anchorButton: GuiButton)
         updateMiniPosition()
         miniOpen = true
         mini.Visible = true
-        mini.Size = UDim2.fromOffset(58, 58)
+        mini.Size = UDim2.fromOffset(56, 56)
         mini.BackgroundTransparency = 1
         setZIndexRecursive(mini, 300)
 
         tween(mini, CleanUI.Defaults.AnimationSoft, {
             BackgroundTransparency = 0,
-            Size = UDim2.fromOffset(70, 70),
+            Size = UDim2.fromOffset(72, 72),
         })
 
         clearOutsideConnections()
@@ -1514,12 +1514,12 @@ local function createHeaderBindMenu(section: any, anchorButton: GuiButton)
         updateMenuPosition()
         menuOpen = true
         menu.Visible = true
-        menu.Size = UDim2.fromOffset(304, 0)
+        menu.Size = UDim2.fromOffset(306, 0)
         setZIndexRecursive(menu, 320)
         repaintModes()
 
         tween(menu, CleanUI.Defaults.AnimationNormal, {
-            Size = UDim2.fromOffset(304, 218),
+            Size = UDim2.fromOffset(306, 254),
         })
 
         clearOutsideConnections()
@@ -1604,16 +1604,50 @@ local function createHeaderBindMenu(section: any, anchorButton: GuiButton)
         scheduleMiniHoverClose()
     end)
 
+    local lastHoveringMiniZone = false
+    local hoverLoopConnection = RunService.RenderStepped:Connect(function()
+        if not anchorButton.Parent then
+            return
+        end
+
+        if menuOpen then
+            lastHoveringMiniZone = false
+            return
+        end
+
+        local mouse = UserInputService:GetMouseLocation()
+        local hovering = pointInGui(mouse, anchorButton) or (mini.Visible and pointInGui(mouse, mini))
+
+        if hovering == lastHoveringMiniZone then
+            return
+        end
+
+        lastHoveringMiniZone = hovering
+
+        if hovering then
+            cancelHoverClose()
+            tween(anchorButton, CleanUI.Defaults.AnimationSoft, {
+                BackgroundTransparency = 0,
+                BackgroundColor3 = Color3.fromRGB(31, 35, 43),
+            })
+            openMini()
+        else
+            scheduleMiniHoverClose()
+        end
+    end)
+
+    window.Maid:Give(hoverLoopConnection)
+
     miniButton.MouseButton1Click:Connect(function()
         openMenu()
     end)
 
     keyButton.MouseEnter:Connect(function()
-        tween(keyButton, CleanUI.Defaults.AnimationSoft, { BackgroundColor3 = Color3.fromRGB(25, 32, 42) })
+        tween(keyButton, CleanUI.Defaults.AnimationSoft, { BackgroundColor3 = Color3.fromRGB(22, 29, 40) })
     end)
 
     keyButton.MouseLeave:Connect(function()
-        tween(keyButton, CleanUI.Defaults.AnimationSoft, { BackgroundColor3 = Color3.fromRGB(20, 26, 34) })
+        tween(keyButton, CleanUI.Defaults.AnimationSoft, { BackgroundColor3 = Color3.fromRGB(17, 23, 32) })
     end)
 
     keyButton.MouseButton1Click:Connect(function()
