@@ -1538,36 +1538,70 @@ local function createHeaderBindMenu(section: any, anchorButton: GuiButton)
                 end
 
                 local mouse = UserInputService:GetMouseLocation()
-                if not pointInGui(mouse, menu) and not pointInGui(mouse, anchorButton) then
+                if not pointInGui(mouse, menu) and not pointInGui(mouse, anchorButton) and not pointInGui(mouse, mini) then
                     closeMenu()
                 end
             end))
         end)
     end
 
-    anchorButton.MouseEnter:Connect(function()
-        if not miniOpen and not menuOpen then
+    local hoverTicket = 0
+
+    local function cancelHoverClose()
+        hoverTicket += 1
+    end
+
+    local function scheduleMiniHoverClose()
+        hoverTicket += 1
+        local currentTicket = hoverTicket
+
+        task.delay(0.12, function()
+            if currentTicket ~= hoverTicket then
+                return
+            end
+
+            if menuOpen then
+                return
+            end
+
+            local mouse = UserInputService:GetMouseLocation()
+            if pointInGui(mouse, anchorButton) or (mini.Visible and pointInGui(mouse, mini)) then
+                return
+            end
+
+            closeMini()
             tween(anchorButton, CleanUI.Defaults.AnimationSoft, {
-                BackgroundTransparency = 0,
-                BackgroundColor3 = Color3.fromRGB(31, 35, 43),
+                BackgroundTransparency = 1,
             })
+        end)
+    end
+
+    anchorButton.MouseEnter:Connect(function()
+        cancelHoverClose()
+        tween(anchorButton, CleanUI.Defaults.AnimationSoft, {
+            BackgroundTransparency = 0,
+            BackgroundColor3 = Color3.fromRGB(31, 35, 43),
+        })
+
+        if not menuOpen then
+            openMini()
         end
     end)
 
     anchorButton.MouseLeave:Connect(function()
-        if not miniOpen and not menuOpen then
-            tween(anchorButton, CleanUI.Defaults.AnimationSoft, {
-                BackgroundTransparency = 1,
-            })
-        end
+        scheduleMiniHoverClose()
     end)
 
-    anchorButton.MouseButton1Click:Connect(function()
-        if miniOpen then
-            closeMini()
-        else
-            openMini()
-        end
+    mini.MouseEnter:Connect(function()
+        cancelHoverClose()
+        tween(anchorButton, CleanUI.Defaults.AnimationSoft, {
+            BackgroundTransparency = 0,
+            BackgroundColor3 = Color3.fromRGB(31, 35, 43),
+        })
+    end)
+
+    mini.MouseLeave:Connect(function()
+        scheduleMiniHoverClose()
     end)
 
     miniButton.MouseButton1Click:Connect(function()
