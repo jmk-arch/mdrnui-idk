@@ -40,7 +40,7 @@ local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
 local CleanUI = {}
 CleanUI.__index = CleanUI
-CleanUI.Version = "1.3.1-bind-hover-exact"
+CleanUI.Version = "1.3.2-polished-toggle-preview"
 CleanUI.IsUiOnly = true
 
 ---------------------------------------------------------------------
@@ -94,12 +94,12 @@ CleanUI.Defaults = {
     FontMedium = Enum.Font.GothamMedium,
     FontBold = Enum.Font.GothamBold,
     -- Fast timings keep the UI smooth without feeling delayed.
-    AnimationFast = TweenInfo.new(0.07, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-    AnimationNormal = TweenInfo.new(0.11, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-    AnimationSlow = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-    AnimationPage = TweenInfo.new(0.16, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
-    AnimationSoft = TweenInfo.new(0.12, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
-    AnimationOpen = TweenInfo.new(0.22, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
+    AnimationFast = TweenInfo.new(0.055, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+    AnimationNormal = TweenInfo.new(0.085, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+    AnimationSlow = TweenInfo.new(0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+    AnimationPage = TweenInfo.new(0.115, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
+    AnimationSoft = TweenInfo.new(0.09, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
+    AnimationOpen = TweenInfo.new(0.18, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
 }
 
 ---------------------------------------------------------------------
@@ -464,6 +464,12 @@ function CleanUI:CreateWindow(options: {[string]: any}?)
     addCorner(main, CleanUI.Defaults.WindowCorner)
     addStroke(main, Color3.fromRGB(24, 24, 26), 0, 1)
 
+    local mainScale = create("UIScale", {
+        Name = "OpenScale",
+        Scale = 0.965,
+        Parent = main,
+    })
+
     local sidebar = create("Frame", {
         Name = "Sidebar",
         Size = UDim2.new(0, CleanUI.Defaults.SidebarWidth, 1, 0),
@@ -684,10 +690,29 @@ function CleanUI:CreateWindow(options: {[string]: any}?)
         Parent = notificationStack,
     })
 
+    local toggleButton = create("TextButton", {
+        Name = "CleanUIToggleButton",
+        Size = UDim2.fromOffset(48, 48),
+        Position = UDim2.fromOffset(24, 24),
+        BackgroundColor3 = Color3.fromRGB(15, 17, 20),
+        BorderSizePixel = 0,
+        AutoButtonColor = false,
+        Text = "UI",
+        TextColor3 = CleanUI.Theme.Text,
+        TextSize = 17,
+        Font = CleanUI.Defaults.FontBold,
+        ZIndex = 1100,
+        Parent = screenGui,
+    })
+
+    addCorner(toggleButton, 14)
+    addStroke(toggleButton, Color3.fromRGB(42, 48, 58), 0, 1)
+
     local object = setmetatable({
         Gui = screenGui,
         BackgroundDim = backgroundDim,
         Main = main,
+        MainScale = mainScale,
         Sidebar = sidebar,
         TabsFrame = tabsFrame,
         ContentRoot = contentRoot,
@@ -697,6 +722,7 @@ function CleanUI:CreateWindow(options: {[string]: any}?)
         NotificationLayer = notificationLayer,
         NotificationStack = notificationStack,
         NotificationLayout = notificationLayout,
+        ToggleButton = toggleButton,
         SearchBox = searchBox,
         ConfigButton = configButton,
         CurrentTab = nil,
@@ -711,9 +737,34 @@ function CleanUI:CreateWindow(options: {[string]: any}?)
     object:_bindSearch()
     object:_bindConfigDropdown()
 
+    toggleButton.MouseEnter:Connect(function()
+        tween(toggleButton, CleanUI.Defaults.AnimationSoft, {
+            BackgroundColor3 = Color3.fromRGB(25, 29, 36),
+        })
+        tween(mainScale, CleanUI.Defaults.AnimationSoft, {
+            Scale = object.Visible and 1.006 or 0.965,
+        })
+    end)
+
+    toggleButton.MouseLeave:Connect(function()
+        tween(toggleButton, CleanUI.Defaults.AnimationSoft, {
+            BackgroundColor3 = Color3.fromRGB(15, 17, 20),
+        })
+        tween(mainScale, CleanUI.Defaults.AnimationSoft, {
+            Scale = object.Visible and 1 or 0.965,
+        })
+    end)
+
+    toggleButton.MouseButton1Click:Connect(function()
+        object:ToggleVisible()
+    end)
+
     -- Smooth first-run opening animation.
     tween(backgroundDim, CleanUI.Defaults.AnimationOpen, {
         BackgroundTransparency = 0.42,
+    })
+    tween(mainScale, CleanUI.Defaults.AnimationOpen, {
+        Scale = 1,
     })
     tween(main, CleanUI.Defaults.AnimationOpen, {
         Position = targetPosition,
@@ -1022,18 +1073,27 @@ function Window:SetVisible(visible: boolean)
 
     if visible then
         self.Gui.Enabled = true
+        self.Main.Visible = true
         local targetPosition = self.RestPosition or self.Main.Position
         self.Main.Position = UDim2.new(
             targetPosition.X.Scale,
             targetPosition.X.Offset,
             targetPosition.Y.Scale,
-            targetPosition.Y.Offset + 14
+            targetPosition.Y.Offset + 12
         )
         setGroupFade(self.Main, 1)
+        if self.MainScale then
+            self.MainScale.Scale = 0.965
+        end
 
         tween(self.BackgroundDim, CleanUI.Defaults.AnimationOpen, {
             BackgroundTransparency = 0.42,
         })
+        if self.MainScale then
+            tween(self.MainScale, CleanUI.Defaults.AnimationOpen, {
+                Scale = 1,
+            })
+        end
         tween(self.Main, CleanUI.Defaults.AnimationOpen, {
             Position = targetPosition,
             GroupTransparency = 0,
@@ -1043,19 +1103,24 @@ function Window:SetVisible(visible: boolean)
         tween(self.BackgroundDim, CleanUI.Defaults.AnimationFast, {
             BackgroundTransparency = 1,
         })
+        if self.MainScale then
+            tween(self.MainScale, CleanUI.Defaults.AnimationFast, {
+                Scale = 0.965,
+            })
+        end
         tween(self.Main, CleanUI.Defaults.AnimationFast, {
             Position = UDim2.new(
                 self.RestPosition.X.Scale,
                 self.RestPosition.X.Offset,
                 self.RestPosition.Y.Scale,
-                self.RestPosition.Y.Offset + 10
+                self.RestPosition.Y.Offset + 8
             ),
             GroupTransparency = 1,
         })
 
-        task.delay(0.09, function()
-            if not self.Visible and self.Gui then
-                self.Gui.Enabled = false
+        task.delay(0.095, function()
+            if not self.Visible and self.Main then
+                self.Main.Visible = false
             end
         end)
     end
@@ -1227,12 +1292,13 @@ function Window:SelectTab(tab: any)
             TextColor3 = CleanUI.Theme.Text,
         })
 
-        -- Smooth fade with a tiny vertical movement. No horizontal slide.
+        -- Fast cross-fade. The old tab stays visible for a split second,
+        -- but it fades out quickly so there is no ugly lingering ghost frame.
         oldTab.PageGroup.Visible = true
         oldTab.PageGroup.Position = UDim2.fromOffset(0, 0)
-        tweenPageGroup(oldTab.PageGroup, UDim2.fromOffset(0, 6), 1)
+        tweenPageGroup(oldTab.PageGroup, UDim2.fromOffset(0, -4), 1)
 
-        task.delay(0.13, function()
+        task.delay(0.095, function()
             if oldTab.TransitionToken == token and self.CurrentTab ~= oldTab then
                 oldTab.PageGroup.Visible = false
                 oldTab.PageGroup.Position = UDim2.fromOffset(0, 0)
@@ -1243,8 +1309,8 @@ function Window:SelectTab(tab: any)
 
     tab.TransitionToken += 1
     tab.PageGroup.Visible = true
-    tab.PageGroup.Position = oldTab and UDim2.fromOffset(0, 8) or UDim2.fromOffset(0, 0)
-    setGroupFade(tab.PageGroup, oldTab and 1 or 0)
+    tab.PageGroup.Position = oldTab and UDim2.fromOffset(0, 4) or UDim2.fromOffset(0, 0)
+    setGroupFade(tab.PageGroup, oldTab and 0.22 or 0)
 
     tab.Button.BackgroundColor3 = CleanUI.Theme.Selected
     tween(tab.Button, CleanUI.Defaults.AnimationSoft, {
@@ -1388,16 +1454,17 @@ local function createHeaderBindMenu(section: any, anchorButton: GuiButton)
         Parent = topRow,
     })
 
-    local resetButton = create("ImageButton", {
+    local resetButton = create("TextButton", {
         Name = "ResetButton",
         Size = UDim2.fromOffset(44, 44),
-        Position = UDim2.new(0, 114, 0, 7),
+        Position = UDim2.new(0, 112, 0, 5),
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
         AutoButtonColor = false,
-        Image = "rbxassetid://7734051052",
-        ImageColor3 = Color3.fromRGB(232, 236, 244),
-        ScaleType = Enum.ScaleType.Fit,
+        Text = "C",
+        TextColor3 = Color3.fromRGB(232, 236, 244),
+        TextSize = 25,
+        Font = CleanUI.Defaults.FontMedium,
         ZIndex = 322,
         Parent = topRow,
     })
@@ -1754,11 +1821,11 @@ local function createHeaderBindMenu(section: any, anchorButton: GuiButton)
     end)
 
     resetButton.MouseEnter:Connect(function()
-        tween(resetButton, CleanUI.Defaults.AnimationFast, { ImageColor3 = Color3.fromRGB(255, 255, 255) })
+        tween(resetButton, CleanUI.Defaults.AnimationFast, { TextColor3 = Color3.fromRGB(255, 255, 255) })
     end)
 
     resetButton.MouseLeave:Connect(function()
-        tween(resetButton, CleanUI.Defaults.AnimationFast, { ImageColor3 = Color3.fromRGB(232, 236, 244) })
+        tween(resetButton, CleanUI.Defaults.AnimationFast, { TextColor3 = Color3.fromRGB(232, 236, 244) })
     end)
 
     resetButton.MouseButton1Click:Connect(function()
@@ -2865,6 +2932,12 @@ end
 function Section:AddInlineNametagSettings(callbacks: {[string]: any}?)
     callbacks = callbacks or {}
 
+    local state = {
+        Health = true,
+        Distance = false,
+        Decimal = true,
+    }
+
     local row = create("Frame", {
         Name = "InlineNametagSettings",
         Size = UDim2.new(1, 0, 0, 126),
@@ -2879,7 +2952,7 @@ function Section:AddInlineNametagSettings(callbacks: {[string]: any}?)
         Parent = row,
     })
 
-    local leftLayout = addList(left, 8, false)
+    addList(left, 8, false)
 
     local right = create("Frame", {
         Name = "Right",
@@ -2905,7 +2978,7 @@ function Section:AddInlineNametagSettings(callbacks: {[string]: any}?)
 
     local nameLabel = create("TextLabel", {
         Name = "Name",
-        Size = UDim2.fromOffset(135, 48),
+        Size = UDim2.fromOffset(138, 48),
         Position = UDim2.fromOffset(12, 0),
         BackgroundTransparency = 1,
         Text = "CyberHunter",
@@ -2913,6 +2986,20 @@ function Section:AddInlineNametagSettings(callbacks: {[string]: any}?)
         TextSize = 20,
         Font = CleanUI.Defaults.Font,
         TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = tag,
+    })
+
+    local distanceLabel = create("TextLabel", {
+        Name = "Distance",
+        Size = UDim2.fromOffset(58, 48),
+        Position = UDim2.fromOffset(132, 0),
+        BackgroundTransparency = 1,
+        Text = "",
+        TextColor3 = Color3.fromRGB(105, 105, 108),
+        TextSize = 17,
+        Font = CleanUI.Defaults.FontMedium,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Visible = false,
         Parent = tag,
     })
 
@@ -2926,6 +3013,7 @@ function Section:AddInlineNametagSettings(callbacks: {[string]: any}?)
         TextSize = 19,
         Font = CleanUI.Defaults.FontMedium,
         TextXAlignment = Enum.TextXAlignment.Left,
+        Visible = true,
         Parent = tag,
     })
 
@@ -2941,24 +3029,53 @@ function Section:AddInlineNametagSettings(callbacks: {[string]: any}?)
         Parent = tag,
     })
 
-    local function smallCheckbox(labelText: string, defaultValue: boolean, callback: any)
-        local state = defaultValue == true
+    local currentHealth = 17.337
+    local currentDistance = 42
+
+    local function applyPreview()
+        healthLabel.Visible = state.Health
+        distanceLabel.Visible = state.Distance
+
+        if state.Distance then
+            nameLabel.Size = state.Health and UDim2.fromOffset(116, 48) or UDim2.fromOffset(132, 48)
+            distanceLabel.Position = state.Health and UDim2.fromOffset(119, 0) or UDim2.fromOffset(146, 0)
+            distanceLabel.Text = tostring(math.floor(currentDistance + 0.5)) .. "m"
+        else
+            nameLabel.Size = state.Health and UDim2.fromOffset(135, 48) or UDim2.fromOffset(190, 48)
+            distanceLabel.Text = ""
+        end
+
+        if state.Health then
+            if state.Decimal then
+                healthLabel.Text = string.format("%.3f", currentHealth)
+            else
+                healthLabel.Text = tostring(math.floor(currentHealth + 0.5))
+            end
+        end
+    end
+
+    local function smallCheckbox(labelText: string, defaultValue: boolean, callback: any, stateKey: string)
+        state[stateKey] = defaultValue == true
 
         local item = create("Frame", {
             Name = labelText .. "Item",
             Size = UDim2.new(1, 0, 0, 44),
+            BackgroundColor3 = CleanUI.Theme.Hover,
             BackgroundTransparency = 1,
+            BorderSizePixel = 0,
             Parent = left,
         })
+
+        addCorner(item, 8)
 
         local box = create("TextButton", {
             Name = "Box",
             Size = UDim2.fromOffset(30, 30),
             Position = UDim2.fromOffset(0, 7),
-            BackgroundColor3 = state and CleanUI.Theme.CheckOn or CleanUI.Theme.CheckOff,
+            BackgroundColor3 = state[stateKey] and CleanUI.Theme.CheckOn or CleanUI.Theme.CheckOff,
             BorderSizePixel = 0,
             AutoButtonColor = false,
-            Text = state and "✓" or "",
+            Text = state[stateKey] and "✓" or "",
             TextColor3 = CleanUI.Theme.TextDark,
             TextSize = 24,
             Font = CleanUI.Defaults.FontBold,
@@ -2981,24 +3098,29 @@ function Section:AddInlineNametagSettings(callbacks: {[string]: any}?)
         })
 
         local function repaint()
-            box.Text = state and "✓" or ""
-            box.BackgroundColor3 = state and CleanUI.Theme.CheckOn or CleanUI.Theme.CheckOff
+            box.Text = state[stateKey] and "✓" or ""
+            tween(box, CleanUI.Defaults.AnimationFast, {
+                BackgroundColor3 = state[stateKey] and CleanUI.Theme.CheckOn or CleanUI.Theme.CheckOff,
+            })
         end
 
         local function set(value: boolean)
-            state = value == true
+            state[stateKey] = value == true
             repaint()
-            safeCallback(callback, state)
+            applyPreview()
+            safeCallback(callback, state[stateKey])
         end
 
         box.MouseButton1Click:Connect(function()
-            set(not state)
+            set(not state[stateKey])
         end)
 
-        item.InputBegan:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.MouseButton1 then
-                set(not state)
-            end
+        item.MouseEnter:Connect(function()
+            tween(item, CleanUI.Defaults.AnimationSoft, { BackgroundTransparency = 0.82 })
+        end)
+
+        item.MouseLeave:Connect(function()
+            tween(item, CleanUI.Defaults.AnimationSoft, { BackgroundTransparency = 1 })
         end)
 
         return {
@@ -3006,16 +3128,33 @@ function Section:AddInlineNametagSettings(callbacks: {[string]: any}?)
                 set(value)
             end,
             Get = function()
-                return state
+                return state[stateKey]
             end,
         }
     end
 
-    local showHealth = smallCheckbox("Show Health", true, callbacks.ShowHealth)
-    local showDistance = smallCheckbox("Show Distance", false, callbacks.ShowDistance)
-    local showDecimal = smallCheckbox("Show decimal", true, callbacks.ShowDecimal)
+    local showHealth = smallCheckbox("Show Health", true, callbacks.ShowHealth, "Health")
+    local showDistance = smallCheckbox("Show Distance", false, callbacks.ShowDistance, "Distance")
+    local showDecimal = smallCheckbox("Show Decimal", true, callbacks.ShowDecimal, "Decimal")
 
-    self:_registerRow(row, "Show Health Show Distance Show decimal CyberHunter 17.337")
+    local lastTick = 0
+    local connection = RunService.RenderStepped:Connect(function()
+        local now = os.clock()
+        if now - lastTick < 0.055 then
+            return
+        end
+        lastTick = now
+
+        currentHealth = 50 + math.sin(now * 1.75) * 49
+        currentDistance = 35 + math.sin(now * 0.9) * 18
+
+        applyPreview()
+    end)
+
+    self.Tab.Window.Maid:Give(connection)
+    applyPreview()
+
+    self:_registerRow(row, "Show Health Show Distance Show Decimal CyberHunter health distance preview")
 
     return {
         Row = row,
@@ -3023,7 +3162,9 @@ function Section:AddInlineNametagSettings(callbacks: {[string]: any}?)
         ShowDistance = showDistance,
         ShowDecimal = showDecimal,
         NameLabel = nameLabel,
+        DistanceLabel = distanceLabel,
         HealthLabel = healthLabel,
+        UpdatePreview = applyPreview,
     }
 end
 
@@ -3195,6 +3336,7 @@ local function buildReferenceDemo()
     local visual = window:CreateTab("Visual")
     local player = window:CreateTab("Player")
     local exploit = window:CreateTab("Exploit")
+    local settings = window:CreateTab("Settings")
 
     -- Top compact card, matching the visible upper card in the image.
     local top = combat:AddCompactSection()
@@ -3295,11 +3437,30 @@ local function buildReferenceDemo()
     exploitInfo:AddButton("Example Button", function()
     end)
 
+    local uiToggleKey = Enum.KeyCode.RightShift
+    local settingsSection = settings:AddSection("UI Settings", "Toggle key, notifications, and small interface options")
+    settingsSection:AddKeybind("UI Toggle", uiToggleKey, function(key)
+        uiToggleKey = key
+        window:Notify({
+            Title = "UI Toggle",
+            Content = "Toggle key changed to " .. keyDisplayName(key),
+            Duration = 2.5,
+        })
+    end)
+    settingsSection:AddButton("Test Notify", function()
+        window:Notify({
+            Title = "Notification",
+            Content = "This notify was made inside CleanUI, no external library.",
+            SubContent = "Smooth + custom",
+            Duration = 3,
+        })
+    end)
+
     window:SelectTab(combat)
 
     window:Notify({
         Title = "CleanUI",
-        Content = "UI loaded. Corners, hover, slider, dropdown layer, and notifications are enabled.",
+        Content = "UI loaded smoothly. Preview, toggle key, custom notify, and polished transitions are enabled.",
         Duration = 5,
     })
 
@@ -3308,7 +3469,7 @@ local function buildReferenceDemo()
             return
         end
 
-        if input.KeyCode == Enum.KeyCode.RightShift then
+        if inputObjectToBind(input) == uiToggleKey then
             window:ToggleVisible()
         end
     end)
