@@ -40,7 +40,7 @@ local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
 local CleanUI = {}
 CleanUI.__index = CleanUI
-CleanUI.Version = "1.1.0-smooth-corners"
+CleanUI.Version = "1.2.0-corners-hover-slider-dropdown-notify"
 CleanUI.IsUiOnly = true
 
 ---------------------------------------------------------------------
@@ -194,6 +194,34 @@ local function addFlex(parent: Instance)
         FlexMode = Enum.UIFlexMode.Fill,
         Parent = parent,
     })
+end
+
+local function setZIndexRecursive(root: Instance, baseZ: number)
+    pcall(function()
+        (root :: any).ZIndex = baseZ
+    end)
+
+    for _, descendant in ipairs(root:GetDescendants()) do
+        pcall(function()
+            (descendant :: any).ZIndex = baseZ + 1
+        end)
+    end
+end
+
+local function getOffsetInside(container: GuiObject, object: GuiObject, extraX: number?, extraY: number?)
+    local containerPos = container.AbsolutePosition
+    local objectPos = object.AbsolutePosition
+
+    return UDim2.fromOffset(
+        objectPos.X - containerPos.X + (extraX or 0),
+        objectPos.Y - containerPos.Y + (extraY or 0)
+    )
+end
+
+local function disconnectConnection(connection: RBXScriptConnection?)
+    if connection then
+        connection:Disconnect()
+    end
 end
 
 local function canGroupFade(instance: Instance)
@@ -396,7 +424,7 @@ function CleanUI:CreateWindow(options: {[string]: any}?)
         Name = options.Name or "CleanUI_OneFile",
         IgnoreGuiInset = true,
         ResetOnSpawn = false,
-        ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+        ZIndexBehavior = Enum.ZIndexBehavior.Global,
         Parent = PlayerGui,
     })
 
@@ -414,7 +442,10 @@ function CleanUI:CreateWindow(options: {[string]: any}?)
         Size = options.Size or CleanUI.Defaults.WindowSize,
         Position = options.Position or CleanUI.Defaults.WindowPosition,
         AnchorPoint = Vector2.new(0.5, 0.5),
-        BackgroundColor3 = CleanUI.Theme.WindowBackground,
+        -- The main rounded frame itself owns the left/sidebar background.
+        -- This avoids the common Roblox UICorner issue where a child sidebar
+        -- leaks over the parent corner and makes the left edge look square.
+        BackgroundColor3 = CleanUI.Theme.Sidebar,
         BorderSizePixel = 0,
         ClipsDescendants = true,
         Parent = screenGui,
@@ -427,8 +458,10 @@ function CleanUI:CreateWindow(options: {[string]: any}?)
         Name = "Sidebar",
         Size = UDim2.new(0, CleanUI.Defaults.SidebarWidth, 1, 0),
         BackgroundColor3 = CleanUI.Theme.Sidebar,
+        BackgroundTransparency = 1,
         BorderSizePixel = 0,
         ClipsDescendants = false,
+        ZIndex = 3,
         Parent = main,
     })
 
@@ -438,11 +471,12 @@ function CleanUI:CreateWindow(options: {[string]: any}?)
     addCorner(sidebar, CleanUI.Defaults.WindowCorner)
 
     local sidebarSquareFill = create("Frame", {
-        Name = "SidebarSquareFill",
-        Size = UDim2.new(0, CleanUI.Defaults.WindowCorner + 6, 1, 0),
-        Position = UDim2.new(1, -(CleanUI.Defaults.WindowCorner + 6), 0, 0),
-        BackgroundColor3 = CleanUI.Theme.Sidebar,
+        Name = "SidebarSquareFillDisabled",
+        Size = UDim2.new(0, 0, 1, 0),
+        Position = UDim2.new(1, 0, 0, 0),
+        BackgroundTransparency = 1,
         BorderSizePixel = 0,
+        Visible = false,
         Parent = sidebar,
     })
 
@@ -452,6 +486,7 @@ function CleanUI:CreateWindow(options: {[string]: any}?)
         Position = UDim2.new(1, 0, 0, 0),
         BackgroundColor3 = CleanUI.Theme.SidebarStroke,
         BorderSizePixel = 0,
+        ZIndex = 5,
         Parent = sidebar,
     })
 
@@ -478,11 +513,34 @@ function CleanUI:CreateWindow(options: {[string]: any}?)
 
     addList(tabsFrame, 6, false)
 
+    local rightRoundedBase = create("Frame", {
+        Name = "RightRoundedBase",
+        Size = UDim2.new(1, -CleanUI.Defaults.SidebarWidth, 1, 0),
+        Position = UDim2.fromOffset(CleanUI.Defaults.SidebarWidth, 0),
+        BackgroundColor3 = CleanUI.Theme.WindowBackground,
+        BorderSizePixel = 0,
+        ZIndex = 1,
+        Parent = main,
+    })
+
+    addCorner(rightRoundedBase, CleanUI.Defaults.WindowCorner)
+
+    local rightInnerSquareFill = create("Frame", {
+        Name = "RightInnerSquareFill",
+        Size = UDim2.new(0, CleanUI.Defaults.WindowCorner + 8, 1, 0),
+        Position = UDim2.fromOffset(0, 0),
+        BackgroundColor3 = CleanUI.Theme.WindowBackground,
+        BorderSizePixel = 0,
+        ZIndex = 1,
+        Parent = rightRoundedBase,
+    })
+
     local contentRoot = create("Frame", {
         Name = "ContentRoot",
         Size = UDim2.new(1, -CleanUI.Defaults.SidebarWidth, 1, 0),
         Position = UDim2.fromOffset(CleanUI.Defaults.SidebarWidth, 0),
         BackgroundTransparency = 1,
+        ZIndex = 10,
         Parent = main,
     })
 
@@ -573,6 +631,49 @@ function CleanUI:CreateWindow(options: {[string]: any}?)
         Parent = contentRoot,
     })
 
+    local overlayLayer = create("Frame", {
+        Name = "AlwaysOnTopOverlayLayer",
+        Size = UDim2.fromScale(1, 1),
+        Position = UDim2.fromOffset(0, 0),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        ClipsDescendants = false,
+        Active = false,
+        ZIndex = 200,
+        Parent = main,
+    })
+
+    local notificationLayer = create("Frame", {
+        Name = "NotificationLayer",
+        Size = UDim2.fromScale(1, 1),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        ClipsDescendants = false,
+        Active = false,
+        ZIndex = 1000,
+        Parent = screenGui,
+    })
+
+    local notificationStack = create("Frame", {
+        Name = "NotificationStack",
+        Size = UDim2.fromOffset(360, 600),
+        Position = UDim2.new(1, -24, 1, -24),
+        AnchorPoint = Vector2.new(1, 1),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        ZIndex = 1000,
+        Parent = notificationLayer,
+    })
+
+    local notificationLayout = create("UIListLayout", {
+        FillDirection = Enum.FillDirection.Vertical,
+        HorizontalAlignment = Enum.HorizontalAlignment.Right,
+        VerticalAlignment = Enum.VerticalAlignment.Bottom,
+        SortOrder = Enum.SortOrder.LayoutOrder,
+        Padding = UDim.new(0, 10),
+        Parent = notificationStack,
+    })
+
     local object = setmetatable({
         Gui = screenGui,
         BackgroundDim = backgroundDim,
@@ -582,6 +683,10 @@ function CleanUI:CreateWindow(options: {[string]: any}?)
         ContentRoot = contentRoot,
         Topbar = topbar,
         Pages = pages,
+        OverlayLayer = overlayLayer,
+        NotificationLayer = notificationLayer,
+        NotificationStack = notificationStack,
+        NotificationLayout = notificationLayout,
         SearchBox = searchBox,
         ConfigButton = configButton,
         CurrentTab = nil,
@@ -649,13 +754,15 @@ function Window:_bindConfigDropdown()
         BorderSizePixel = 0,
         ClipsDescendants = true,
         Visible = false,
-        Parent = self.Topbar,
+        ZIndex = 240,
+        Parent = self.OverlayLayer,
     })
 
     addCorner(menu, 14)
     addStroke(menu, CleanUI.Theme.Stroke, 0, 1)
     addPadding(menu, 8, 8, 8, 8)
     addList(menu, 6, false)
+    setZIndexRecursive(menu, 240)
 
     local names = {
         "Default",
@@ -663,10 +770,25 @@ function Window:_bindConfigDropdown()
         "Visual Only",
     }
 
+    local function updateMenuPosition()
+        menu.Position = getOffsetInside(self.Main, self.ConfigButton, 0, self.ConfigButton.AbsoluteSize.Y + 4)
+        menu.Size = UDim2.fromOffset(self.ConfigButton.AbsoluteSize.X, menu.Size.Y.Offset)
+    end
+
+    local function closeMenu()
+        dropdownOpen = false
+        tween(menu, CleanUI.Defaults.AnimationFast, { Size = UDim2.fromOffset(self.ConfigButton.AbsoluteSize.X, 0) })
+        task.delay(0.13, function()
+            if not dropdownOpen then
+                menu.Visible = false
+            end
+        end)
+    end
+
     for _, name in ipairs(names) do
         local item = create("TextButton", {
             Size = UDim2.new(1, 0, 0, 36),
-            BackgroundColor3 = CleanUI.Theme.Card2,
+            BackgroundColor3 = CleanUI.Theme.Hover,
             BackgroundTransparency = 1,
             BorderSizePixel = 0,
             AutoButtonColor = false,
@@ -674,17 +796,24 @@ function Window:_bindConfigDropdown()
             TextColor3 = CleanUI.Theme.Text,
             TextSize = 16,
             Font = CleanUI.Defaults.FontMedium,
+            ZIndex = 241,
             Parent = menu,
         })
 
         addCorner(item, 8)
 
         item.MouseEnter:Connect(function()
-            tween(item, CleanUI.Defaults.AnimationFast, { BackgroundTransparency = 0 })
+            tween(item, CleanUI.Defaults.AnimationSoft, {
+                BackgroundTransparency = 0,
+                TextColor3 = Color3.fromRGB(255, 255, 255),
+            })
         end)
 
         item.MouseLeave:Connect(function()
-            tween(item, CleanUI.Defaults.AnimationFast, { BackgroundTransparency = 1 })
+            tween(item, CleanUI.Defaults.AnimationSoft, {
+                BackgroundTransparency = 1,
+                TextColor3 = CleanUI.Theme.Text,
+            })
         end)
 
         item.MouseButton1Click:Connect(function()
@@ -693,31 +822,145 @@ function Window:_bindConfigDropdown()
                 textLabel.Text = name
             end
 
-            dropdownOpen = false
-            tween(menu, CleanUI.Defaults.AnimationFast, { Size = UDim2.fromOffset(260, 0) })
-            task.delay(0.12, function()
-                if not dropdownOpen then
-                    menu.Visible = false
-                end
-            end)
+            closeMenu()
         end)
     end
 
     self.Maid:Give(self.ConfigButton.MouseButton1Click:Connect(function()
         dropdownOpen = not dropdownOpen
+        updateMenuPosition()
 
         if dropdownOpen then
             menu.Visible = true
-            tween(menu, CleanUI.Defaults.AnimationNormal, { Size = UDim2.fromOffset(260, 140) })
+            menu.Size = UDim2.fromOffset(self.ConfigButton.AbsoluteSize.X, 0)
+            tween(menu, CleanUI.Defaults.AnimationNormal, { Size = UDim2.fromOffset(self.ConfigButton.AbsoluteSize.X, 140) })
         else
-            tween(menu, CleanUI.Defaults.AnimationFast, { Size = UDim2.fromOffset(260, 0) })
-            task.delay(0.12, function()
-                if not dropdownOpen then
-                    menu.Visible = false
-                end
-            end)
+            closeMenu()
         end
     end))
+
+    self.Maid:Give(self.Main:GetPropertyChangedSignal("AbsolutePosition"):Connect(function()
+        if dropdownOpen then
+            updateMenuPosition()
+        end
+    end))
+end
+
+function Window:Notify(options: {[string]: any}?)
+    options = options or {}
+
+    local title = tostring(options.Title or "Notification")
+    local content = tostring(options.Content or "")
+    local subContent = tostring(options.SubContent or "")
+    local duration = options.Duration
+
+    if duration == nil then
+        duration = 4
+    end
+
+    local card = create("CanvasGroup", {
+        Name = "Notification",
+        Size = UDim2.fromOffset(340, 0),
+        AutomaticSize = Enum.AutomaticSize.Y,
+        BackgroundColor3 = CleanUI.Theme.Card,
+        BorderSizePixel = 0,
+        GroupTransparency = 1,
+        ZIndex = 1001,
+        Parent = self.NotificationStack,
+    })
+
+    addCorner(card, 16)
+    addStroke(card, CleanUI.Theme.StrokeSoft, 0, 1)
+    addPadding(card, 16, 16, 14, 14)
+
+    local layout = create("UIListLayout", {
+        FillDirection = Enum.FillDirection.Vertical,
+        SortOrder = Enum.SortOrder.LayoutOrder,
+        Padding = UDim.new(0, 4),
+        Parent = card,
+    })
+
+    local titleLabel = create("TextLabel", {
+        Name = "Title",
+        Size = UDim2.new(1, 0, 0, 24),
+        BackgroundTransparency = 1,
+        Text = title,
+        TextColor3 = CleanUI.Theme.Text,
+        TextSize = 18,
+        Font = CleanUI.Defaults.FontMedium,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        ZIndex = 1002,
+        Parent = card,
+    })
+
+    local contentLabel = create("TextLabel", {
+        Name = "Content",
+        Size = UDim2.new(1, 0, 0, content == "" and 0 or 38),
+        BackgroundTransparency = 1,
+        Text = content,
+        TextColor3 = CleanUI.Theme.TextDim,
+        TextSize = 15,
+        Font = CleanUI.Defaults.Font,
+        TextWrapped = true,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextYAlignment = Enum.TextYAlignment.Top,
+        Visible = content ~= "",
+        ZIndex = 1002,
+        Parent = card,
+    })
+
+    local subLabel = create("TextLabel", {
+        Name = "SubContent",
+        Size = UDim2.new(1, 0, 0, subContent == "" and 0 or 20),
+        BackgroundTransparency = 1,
+        Text = subContent,
+        TextColor3 = CleanUI.Theme.TextMuted,
+        TextSize = 13,
+        Font = CleanUI.Defaults.Font,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextYAlignment = Enum.TextYAlignment.Top,
+        Visible = subContent ~= "",
+        ZIndex = 1002,
+        Parent = card,
+    })
+
+    layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        card.Size = UDim2.fromOffset(340, layout.AbsoluteContentSize.Y + 28)
+    end)
+
+    card.Position = UDim2.fromOffset(26, 0)
+    tween(card, CleanUI.Defaults.AnimationSoft, {
+        GroupTransparency = 0,
+        Position = UDim2.fromOffset(0, 0),
+    })
+
+    local closed = false
+    local function close()
+        if closed then
+            return
+        end
+
+        closed = true
+        tween(card, CleanUI.Defaults.AnimationNormal, {
+            GroupTransparency = 1,
+            Position = UDim2.fromOffset(30, 0),
+        })
+
+        task.delay(0.24, function()
+            if card then
+                card:Destroy()
+            end
+        end)
+    end
+
+    if duration and duration > 0 then
+        task.delay(duration, close)
+    end
+
+    return {
+        Close = close,
+        Instance = card,
+    }
 end
 
 function Window:SetVisible(visible: boolean)
@@ -822,17 +1065,19 @@ function Window:CreateTab(name: string)
 
     button.MouseEnter:Connect(function()
         if self.CurrentTab ~= tab then
-            tween(button, CleanUI.Defaults.AnimationFast, {
-                BackgroundTransparency = 0.55,
+            tween(button, CleanUI.Defaults.AnimationSoft, {
+                BackgroundTransparency = 0.25,
                 BackgroundColor3 = CleanUI.Theme.Hover,
+                TextColor3 = Color3.fromRGB(255, 255, 255),
             })
         end
     end)
 
     button.MouseLeave:Connect(function()
         if self.CurrentTab ~= tab then
-            tween(button, CleanUI.Defaults.AnimationFast, {
+            tween(button, CleanUI.Defaults.AnimationSoft, {
                 BackgroundTransparency = 1,
+                TextColor3 = CleanUI.Theme.Text,
             })
         end
     end)
@@ -863,8 +1108,9 @@ function Window:SelectTab(tab: any)
             other.PageGroup.Visible = false
             other.PageGroup.Position = UDim2.fromOffset(0, 0)
             setGroupFade(other.PageGroup, 1)
-            tween(other.Button, CleanUI.Defaults.AnimationFast, {
+            tween(other.Button, CleanUI.Defaults.AnimationSoft, {
                 BackgroundTransparency = 1,
+                TextColor3 = CleanUI.Theme.Text,
             })
         end
     end
@@ -873,8 +1119,9 @@ function Window:SelectTab(tab: any)
         oldTab.TransitionToken += 1
         local token = oldTab.TransitionToken
 
-        tween(oldTab.Button, CleanUI.Defaults.AnimationFast, {
+        tween(oldTab.Button, CleanUI.Defaults.AnimationSoft, {
             BackgroundTransparency = 1,
+            TextColor3 = CleanUI.Theme.Text,
         })
 
         oldTab.PageGroup.Visible = true
@@ -895,9 +1142,10 @@ function Window:SelectTab(tab: any)
     setGroupFade(tab.PageGroup, oldTab and 1 or 0)
 
     tab.Button.BackgroundColor3 = CleanUI.Theme.Selected
-    tween(tab.Button, CleanUI.Defaults.AnimationFast, {
+    tween(tab.Button, CleanUI.Defaults.AnimationSoft, {
         BackgroundTransparency = 0,
         BackgroundColor3 = CleanUI.Theme.Selected,
+        TextColor3 = Color3.fromRGB(255, 255, 255),
     })
 
     tweenPageGroup(tab.PageGroup, UDim2.fromOffset(0, 0), 0)
@@ -1387,6 +1635,32 @@ function Section:AddSlider(text: string, minValue: number, maxValue: number, def
 
     local dragging = false
 
+    local function setSliderHover(isHovering: boolean)
+        if dragging then
+            return
+        end
+
+        tween(knob, CleanUI.Defaults.AnimationSoft, {
+            Size = isHovering and UDim2.fromOffset(28, 28) or UDim2.fromOffset(24, 24),
+        })
+    end
+
+    bar.MouseEnter:Connect(function()
+        setSliderHover(true)
+    end)
+
+    bar.MouseLeave:Connect(function()
+        setSliderHover(false)
+    end)
+
+    knob.MouseEnter:Connect(function()
+        setSliderHover(true)
+    end)
+
+    knob.MouseLeave:Connect(function()
+        setSliderHover(false)
+    end)
+
     local function percentFromValue(v: number)
         if maxValue == minValue then
             return 0
@@ -1402,8 +1676,17 @@ function Section:AddSlider(text: string, minValue: number, maxValue: number, def
 
         local percent = percentFromValue(value)
         valueLabel.Text = formatValue(value, step, suffix)
-        fill.Size = UDim2.new(percent, 0, 1, 0)
-        knob.Position = UDim2.new(percent, -12, 0.5, -12)
+
+        local targetFill = UDim2.new(percent, 0, 1, 0)
+        local targetKnob = UDim2.new(percent, -12, 0.5, -12)
+
+        if dragging then
+            tween(fill, TweenInfo.new(0.075, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), { Size = targetFill })
+            tween(knob, TweenInfo.new(0.075, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), { Position = targetKnob })
+        else
+            tween(fill, CleanUI.Defaults.AnimationSoft, { Size = targetFill })
+            tween(knob, CleanUI.Defaults.AnimationSoft, { Position = targetKnob })
+        end
 
         if call ~= false then
             safeCallback(callback, value)
@@ -1420,6 +1703,7 @@ function Section:AddSlider(text: string, minValue: number, maxValue: number, def
     bar.InputBegan:Connect(function(input)
         if isPointerDown(input) then
             dragging = true
+            tween(knob, CleanUI.Defaults.AnimationFast, { Size = UDim2.fromOffset(30, 30) })
             applyValue(valueFromX(input.Position.X), true)
         end
     end)
@@ -1427,6 +1711,7 @@ function Section:AddSlider(text: string, minValue: number, maxValue: number, def
     knob.InputBegan:Connect(function(input)
         if isPointerDown(input) then
             dragging = true
+            tween(knob, CleanUI.Defaults.AnimationFast, { Size = UDim2.fromOffset(30, 30) })
             applyValue(valueFromX(input.Position.X), true)
         end
     end)
@@ -1440,6 +1725,7 @@ function Section:AddSlider(text: string, minValue: number, maxValue: number, def
     UserInputService.InputEnded:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             dragging = false
+            tween(knob, CleanUI.Defaults.AnimationSoft, { Size = UDim2.fromOffset(24, 24) })
         end
     end)
 
@@ -1536,6 +1822,10 @@ end
 function Section:AddDropdown(text: string, items: {string}, defaultItem: string?, callback: any)
     local selected = defaultItem or items[1] or ""
     local open = false
+    local maxVisibleItems = 6
+    local itemHeight = 34
+    local menuPadding = 12
+    local activeConnections = {}
 
     local row = create("Frame", {
         Name = text .. "DropdownRow",
@@ -1595,26 +1885,76 @@ function Section:AddDropdown(text: string, items: {string}, defaultItem: string?
         Parent = button,
     })
 
+    local overlay = self.Tab.Window.OverlayLayer
     local menu = create("Frame", {
-        Name = "Menu",
-        Size = UDim2.new(0.58, 0, 0, 0),
-        Position = UDim2.new(0.42, 0, 1, -2),
+        Name = text .. "DropdownMenu",
+        Size = UDim2.fromOffset(220, 0),
+        Position = UDim2.fromOffset(0, 0),
         BackgroundColor3 = CleanUI.Theme.Card2,
         BorderSizePixel = 0,
         ClipsDescendants = true,
         Visible = false,
-        ZIndex = 5,
-        Parent = row,
+        ZIndex = 260,
+        Parent = overlay,
     })
 
     addCorner(menu, 10)
     addStroke(menu, CleanUI.Theme.StrokeSoft, 0, 1)
-    addPadding(menu, 6, 6, 6, 6)
-    addList(menu, 4, false)
+
+    local scroller = create("ScrollingFrame", {
+        Name = "Items",
+        Size = UDim2.new(1, -12, 1, -12),
+        Position = UDim2.fromOffset(6, 6),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        ScrollBarThickness = #items > maxVisibleItems and 3 or 0,
+        CanvasSize = UDim2.fromOffset(0, 0),
+        ClipsDescendants = true,
+        ZIndex = 261,
+        Parent = menu,
+    })
+
+    local list = addList(scroller, 4, false)
+
+    local function menuHeight()
+        return math.min(#items, maxVisibleItems) * (itemHeight + 4) + menuPadding
+    end
+
+    local function updateMenuPosition()
+        local width = button.AbsoluteSize.X
+        menu.Position = getOffsetInside(self.Tab.Window.Main, button, 0, button.AbsoluteSize.Y + 6)
+        menu.Size = UDim2.fromOffset(width, menu.Size.Y.Offset)
+        scroller.Size = UDim2.new(1, -12, 1, -12)
+    end
+
+    local function clearOutsideConnections()
+        for _, connection in ipairs(activeConnections) do
+            disconnectConnection(connection)
+        end
+        table.clear(activeConnections)
+    end
+
+    local function closeMenu()
+        if not open then
+            return
+        end
+
+        open = false
+        clearOutsideConnections()
+        tween(arrow, CleanUI.Defaults.AnimationSoft, { Rotation = 0 })
+        tween(button, CleanUI.Defaults.AnimationSoft, { BackgroundColor3 = CleanUI.Theme.Card2 })
+        tween(menu, CleanUI.Defaults.AnimationFast, { Size = UDim2.fromOffset(button.AbsoluteSize.X, 0) })
+
+        task.delay(0.14, function()
+            if not open then
+                menu.Visible = false
+            end
+        end)
+    end
 
     for _, itemText in ipairs(items) do
         local item = create("TextButton", {
-            Size = UDim2.new(1, 0, 0, 34),
+            Size = UDim2.new(1, 0, 0, itemHeight),
             BackgroundColor3 = CleanUI.Theme.Hover,
             BackgroundTransparency = 1,
             BorderSizePixel = 0,
@@ -1623,55 +1963,98 @@ function Section:AddDropdown(text: string, items: {string}, defaultItem: string?
             TextColor3 = CleanUI.Theme.Text,
             TextSize = 16,
             Font = CleanUI.Defaults.Font,
-            Parent = menu,
+            ZIndex = 262,
+            Parent = scroller,
         })
 
         addCorner(item, 8)
 
         item.MouseEnter:Connect(function()
-            tween(item, CleanUI.Defaults.AnimationFast, { BackgroundTransparency = 0 })
+            tween(item, CleanUI.Defaults.AnimationSoft, {
+                BackgroundTransparency = 0,
+                TextColor3 = Color3.fromRGB(255, 255, 255),
+            })
         end)
 
         item.MouseLeave:Connect(function()
-            tween(item, CleanUI.Defaults.AnimationFast, { BackgroundTransparency = 1 })
+            tween(item, CleanUI.Defaults.AnimationSoft, {
+                BackgroundTransparency = 1,
+                TextColor3 = CleanUI.Theme.Text,
+            })
         end)
 
         item.MouseButton1Click:Connect(function()
             selected = itemText
             valueLabel.Text = selected
-            open = false
-            tween(menu, CleanUI.Defaults.AnimationFast, { Size = UDim2.new(0.58, 0, 0, 0) })
-            task.delay(0.13, function()
-                if not open then
-                    menu.Visible = false
-                    row.Size = UDim2.new(1, 0, 0, 50)
-                end
-            end)
+            closeMenu()
             safeCallback(callback, selected)
         end)
     end
 
+    list:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        scroller.CanvasSize = UDim2.fromOffset(0, list.AbsoluteContentSize.Y + 6)
+    end)
+
+    button.MouseEnter:Connect(function()
+        if not open then
+            tween(button, CleanUI.Defaults.AnimationSoft, { BackgroundColor3 = CleanUI.Theme.Card3 })
+        end
+    end)
+
+    button.MouseLeave:Connect(function()
+        if not open then
+            tween(button, CleanUI.Defaults.AnimationSoft, { BackgroundColor3 = CleanUI.Theme.Card2 })
+        end
+    end)
+
     button.MouseButton1Click:Connect(function()
         open = not open
+        updateMenuPosition()
 
         if open then
             menu.Visible = true
-            row.Size = UDim2.new(1, 0, 0, 50 + math.min(#items, 5) * 38 + 14)
-            tween(menu, CleanUI.Defaults.AnimationNormal, {
-                Size = UDim2.new(0.58, 0, 0, math.min(#items, 5) * 38 + 10),
-            })
-        else
-            tween(menu, CleanUI.Defaults.AnimationFast, {
-                Size = UDim2.new(0.58, 0, 0, 0),
-            })
-            task.delay(0.13, function()
-                if not open then
-                    menu.Visible = false
-                    row.Size = UDim2.new(1, 0, 0, 50)
+            menu.Size = UDim2.fromOffset(button.AbsoluteSize.X, 0)
+            setZIndexRecursive(menu, 260)
+            tween(arrow, CleanUI.Defaults.AnimationSoft, { Rotation = 180 })
+            tween(button, CleanUI.Defaults.AnimationSoft, { BackgroundColor3 = CleanUI.Theme.Card3 })
+            tween(menu, CleanUI.Defaults.AnimationNormal, { Size = UDim2.fromOffset(button.AbsoluteSize.X, menuHeight()) })
+
+            table.insert(activeConnections, UserInputService.InputBegan:Connect(function(input, gameProcessed)
+                if gameProcessed then
+                    return
                 end
-            end)
+
+                if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                    local mouse = UserInputService:GetMouseLocation()
+                    local menuPos = menu.AbsolutePosition
+                    local menuSize = menu.AbsoluteSize
+                    local buttonPos = button.AbsolutePosition
+                    local buttonSize = button.AbsoluteSize
+
+                    local inMenu = mouse.X >= menuPos.X and mouse.X <= menuPos.X + menuSize.X and mouse.Y >= menuPos.Y and mouse.Y <= menuPos.Y + menuSize.Y
+                    local inButton = mouse.X >= buttonPos.X and mouse.X <= buttonPos.X + buttonSize.X and mouse.Y >= buttonPos.Y and mouse.Y <= buttonPos.Y + buttonSize.Y
+
+                    if not inMenu and not inButton then
+                        closeMenu()
+                    end
+                end
+            end))
+        else
+            closeMenu()
         end
     end)
+
+    self.Tab.Window.Maid:Give(self.Tab.Window.Main:GetPropertyChangedSignal("AbsolutePosition"):Connect(function()
+        if open then
+            updateMenuPosition()
+        end
+    end))
+
+    self.Tab.Window.Maid:Give(self.Tab.Window.Main:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+        if open then
+            updateMenuPosition()
+        end
+    end))
 
     self:_registerRow(row, text .. " " .. table.concat(items, " "))
 
@@ -1690,6 +2073,10 @@ function Section:AddDropdown(text: string, items: {string}, defaultItem: string?
 
     function api:Get()
         return selected
+    end
+
+    function api:Close()
+        closeMenu()
     end
 
     return api
@@ -2086,6 +2473,14 @@ function Section:AddColorPreview(text: string, defaultColor: Color3?, callback: 
     return api
 end
 
+function CleanUI:Notify(options: {[string]: any}?)
+    if _G.CleanUIWindow and type((_G.CleanUIWindow :: any).Notify) == "function" then
+        return (_G.CleanUIWindow :: any):Notify(options)
+    end
+
+    return nil
+end
+
 ---------------------------------------------------------------------
 -- Reference demo builder
 ---------------------------------------------------------------------
@@ -2189,6 +2584,12 @@ local function buildReferenceDemo()
     playerSection:AddTextbox("Display Name", "Type name", "CyberHunter", function(text)
     end)
     playerSection:AddButton("Save Settings", function()
+        window:Notify({
+            Title = "Settings",
+            Content = "Your settings were saved locally in this UI demo.",
+            SubContent = "Example notification",
+            Duration = 4,
+        })
     end)
 
     local exploitInfo = exploit:AddSection("UI Only", "This tab is only a visual placeholder. Add legitimate game settings here.")
@@ -2197,6 +2598,12 @@ local function buildReferenceDemo()
     end)
 
     window:SelectTab(combat)
+
+    window:Notify({
+        Title = "CleanUI",
+        Content = "UI loaded. Corners, hover, slider, dropdown layer, and notifications are enabled.",
+        Duration = 5,
+    })
 
     UserInputService.InputBegan:Connect(function(input, gameProcessed)
         if gameProcessed then
