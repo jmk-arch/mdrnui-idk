@@ -40,7 +40,7 @@ local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
 local CleanUI = {}
 CleanUI.__index = CleanUI
-CleanUI.Version = "1.2.0-corners-hover-slider-dropdown-notify"
+CleanUI.Version = "1.3.0-fade-tabs-header-bind-popup"
 CleanUI.IsUiOnly = true
 
 ---------------------------------------------------------------------
@@ -1103,6 +1103,14 @@ function Window:SelectTab(tab: any)
     local oldTab = self.CurrentTab
     self.CurrentTab = tab
 
+    -- Close floating overlay menus when a tab changes, so dropdowns/keybind popups
+    -- never remain visually stuck above the wrong page.
+    for _, child in ipairs(self.OverlayLayer:GetChildren()) do
+        if child:IsA("GuiObject") and child.Name ~= "ConfigDropdown" then
+            child.Visible = false
+        end
+    end
+
     for _, other in ipairs(self.Tabs) do
         if other ~= tab and other ~= oldTab then
             other.PageGroup.Visible = false
@@ -1110,6 +1118,7 @@ function Window:SelectTab(tab: any)
             setGroupFade(other.PageGroup, 1)
             tween(other.Button, CleanUI.Defaults.AnimationSoft, {
                 BackgroundTransparency = 1,
+                BackgroundColor3 = CleanUI.Theme.Hover,
                 TextColor3 = CleanUI.Theme.Text,
             })
         end
@@ -1121,13 +1130,17 @@ function Window:SelectTab(tab: any)
 
         tween(oldTab.Button, CleanUI.Defaults.AnimationSoft, {
             BackgroundTransparency = 1,
+            BackgroundColor3 = CleanUI.Theme.Hover,
             TextColor3 = CleanUI.Theme.Text,
         })
 
+        -- Fade only. No side slide, because the old slide could look like
+        -- the page was dragging sideways when switching tabs quickly.
         oldTab.PageGroup.Visible = true
-        tweenPageGroup(oldTab.PageGroup, UDim2.fromOffset(-22, 0), 1)
+        oldTab.PageGroup.Position = UDim2.fromOffset(0, 0)
+        tweenPageGroup(oldTab.PageGroup, UDim2.fromOffset(0, 0), 1)
 
-        task.delay(0.34, function()
+        task.delay(0.24, function()
             if oldTab.TransitionToken == token and self.CurrentTab ~= oldTab then
                 oldTab.PageGroup.Visible = false
                 oldTab.PageGroup.Position = UDim2.fromOffset(0, 0)
@@ -1138,7 +1151,7 @@ function Window:SelectTab(tab: any)
 
     tab.TransitionToken += 1
     tab.PageGroup.Visible = true
-    tab.PageGroup.Position = oldTab and UDim2.fromOffset(22, 0) or UDim2.fromOffset(0, 0)
+    tab.PageGroup.Position = UDim2.fromOffset(0, 0)
     setGroupFade(tab.PageGroup, oldTab and 1 or 0)
 
     tab.Button.BackgroundColor3 = CleanUI.Theme.Selected
@@ -1158,6 +1171,505 @@ end
 
 Tab = {}
 Tab.__index = Tab
+
+
+local function keyDisplayName(inputValue: any): string
+    if typeof(inputValue) == "EnumItem" then
+        if inputValue == Enum.UserInputType.MouseButton1 then
+            return "M1B"
+        elseif inputValue == Enum.UserInputType.MouseButton2 then
+            return "M2B"
+        elseif inputValue == Enum.UserInputType.MouseButton3 then
+            return "M3B"
+        elseif tostring(inputValue):find("KeyCode") then
+            return inputValue.Name
+        else
+            return inputValue.Name
+        end
+    end
+
+    return tostring(inputValue or "None")
+end
+
+local function inputObjectToBind(input: InputObject): any?
+    if input.UserInputType == Enum.UserInputType.Keyboard then
+        if input.KeyCode and input.KeyCode ~= Enum.KeyCode.Unknown then
+            return input.KeyCode
+        end
+    elseif input.UserInputType == Enum.UserInputType.MouseButton1 then
+        return Enum.UserInputType.MouseButton1
+    elseif input.UserInputType == Enum.UserInputType.MouseButton2 then
+        return Enum.UserInputType.MouseButton2
+    elseif input.UserInputType == Enum.UserInputType.MouseButton3 then
+        return Enum.UserInputType.MouseButton3
+    end
+
+    return nil
+end
+
+local function pointInGui(point: Vector2, gui: GuiObject): boolean
+    local pos = gui.AbsolutePosition
+    local size = gui.AbsoluteSize
+
+    return point.X >= pos.X and point.X <= pos.X + size.X and point.Y >= pos.Y and point.Y <= pos.Y + size.Y
+end
+
+local function createHeaderBindMenu(section: any, anchorButton: GuiButton)
+    local window = section.Tab.Window
+    local overlay = window.OverlayLayer
+    local selectedInput: any = Enum.UserInputType.MouseButton1
+    local mode = "Hold"
+    local listening = false
+    local acceptInput = false
+    local miniOpen = false
+    local menuOpen = false
+    local onChangedCallback: any = nil
+    local outsideConnections = {}
+    local listenConnection: RBXScriptConnection? = nil
+
+    local mini = create("Frame", {
+        Name = section.Title .. "HeaderBindMini",
+        Size = UDim2.fromOffset(70, 70),
+        Position = UDim2.fromOffset(0, 0),
+        BackgroundColor3 = Color3.fromRGB(31, 35, 43),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        ClipsDescendants = true,
+        Visible = false,
+        ZIndex = 300,
+        Parent = overlay,
+    })
+
+    addCorner(mini, 16)
+    addStroke(mini, Color3.fromRGB(40, 46, 55), 0, 1)
+
+    local miniButton = create("TextButton", {
+        Name = "OpenBindMenu",
+        Size = UDim2.fromScale(1, 1),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        AutoButtonColor = false,
+        Text = "...",
+        TextColor3 = CleanUI.Theme.Text,
+        TextSize = 28,
+        Font = CleanUI.Defaults.FontBold,
+        ZIndex = 301,
+        Parent = mini,
+    })
+
+    local menu = create("Frame", {
+        Name = section.Title .. "HeaderBindMenu",
+        Size = UDim2.fromOffset(304, 0),
+        Position = UDim2.fromOffset(0, 0),
+        BackgroundColor3 = Color3.fromRGB(17, 22, 29),
+        BorderSizePixel = 0,
+        ClipsDescendants = true,
+        Visible = false,
+        ZIndex = 320,
+        Parent = overlay,
+    })
+
+    addCorner(menu, 14)
+    addStroke(menu, Color3.fromRGB(35, 42, 52), 0, 1)
+    addPadding(menu, 24, 18, 18, 18)
+
+    local menuLayout = addList(menu, 14, false)
+
+    local topRow = create("Frame", {
+        Name = "TopRow",
+        Size = UDim2.new(1, 0, 0, 48),
+        BackgroundTransparency = 1,
+        ZIndex = 321,
+        Parent = menu,
+    })
+
+    create("TextLabel", {
+        Name = "KeyLabel",
+        Size = UDim2.new(0, 86, 1, 0),
+        BackgroundTransparency = 1,
+        Text = "Key",
+        TextColor3 = CleanUI.Theme.TextDim,
+        TextSize = 26,
+        Font = CleanUI.Defaults.FontMedium,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        ZIndex = 322,
+        Parent = topRow,
+    })
+
+    local resetButton = create("TextButton", {
+        Name = "ResetButton",
+        Size = UDim2.fromOffset(48, 48),
+        Position = UDim2.new(0, 96, 0, 0),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        AutoButtonColor = false,
+        Text = "C",
+        TextColor3 = CleanUI.Theme.Text,
+        TextSize = 25,
+        Font = CleanUI.Defaults.FontMedium,
+        ZIndex = 322,
+        Parent = topRow,
+    })
+
+    local keyButton = create("TextButton", {
+        Name = "KeyButton",
+        Size = UDim2.fromOffset(86, 48),
+        Position = UDim2.new(1, -86, 0, 0),
+        BackgroundColor3 = Color3.fromRGB(20, 26, 34),
+        BorderSizePixel = 0,
+        AutoButtonColor = false,
+        Text = keyDisplayName(selectedInput),
+        TextColor3 = CleanUI.Theme.Text,
+        TextSize = 24,
+        Font = CleanUI.Defaults.FontMedium,
+        ZIndex = 322,
+        Parent = topRow,
+    })
+
+    addCorner(keyButton, 10)
+    addStroke(keyButton, Color3.fromRGB(36, 44, 56), 0, 1)
+
+    local separator = create("Frame", {
+        Name = "Separator",
+        Size = UDim2.new(1, 0, 0, 1),
+        BackgroundColor3 = Color3.fromRGB(34, 41, 51),
+        BorderSizePixel = 0,
+        ZIndex = 321,
+        Parent = menu,
+    })
+
+    local function makeModeRow(title: string)
+        local row = create("TextButton", {
+            Name = title .. "ModeRow",
+            Size = UDim2.new(1, 0, 0, 46),
+            BackgroundTransparency = 1,
+            BorderSizePixel = 0,
+            AutoButtonColor = false,
+            Text = "",
+            ZIndex = 321,
+            Parent = menu,
+        })
+
+        local circle = create("Frame", {
+            Name = "Circle",
+            Size = UDim2.fromOffset(34, 34),
+            Position = UDim2.fromOffset(0, 6),
+            BackgroundTransparency = 1,
+            BorderSizePixel = 0,
+            ZIndex = 322,
+            Parent = row,
+        })
+
+        addCorner(circle, 17)
+        addStroke(circle, Color3.fromRGB(37, 45, 57), 0, 3)
+
+        local dot = create("Frame", {
+            Name = "Dot",
+            Size = UDim2.fromOffset(22, 22),
+            Position = UDim2.fromOffset(6, 6),
+            BackgroundColor3 = Color3.fromRGB(235, 238, 244),
+            BackgroundTransparency = 1,
+            BorderSizePixel = 0,
+            ZIndex = 323,
+            Parent = circle,
+        })
+
+        addCorner(dot, 11)
+
+        create("TextLabel", {
+            Name = "Text",
+            Size = UDim2.new(1, -54, 1, 0),
+            Position = UDim2.fromOffset(56, 0),
+            BackgroundTransparency = 1,
+            Text = title,
+            TextColor3 = CleanUI.Theme.TextDim,
+            TextSize = 25,
+            Font = CleanUI.Defaults.FontMedium,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            ZIndex = 322,
+            Parent = row,
+        })
+
+        return row, circle, dot
+    end
+
+    local toggleRow, toggleCircle, toggleDot = makeModeRow("Toggle")
+    local holdRow, holdCircle, holdDot = makeModeRow("Hold")
+
+    local function updateMiniPosition()
+        local pos = getOffsetInside(window.Main, anchorButton, -12, -10)
+        mini.Position = pos
+    end
+
+    local function updateMenuPosition()
+        local base = getOffsetInside(window.Main, anchorButton, -280, 40)
+        local x = math.max(10, math.min(base.X.Offset, window.Main.AbsoluteSize.X - 324))
+        local y = math.max(10, math.min(base.Y.Offset, window.Main.AbsoluteSize.Y - 232))
+        menu.Position = UDim2.fromOffset(x, y)
+    end
+
+    local function fireChanged()
+        safeCallback(onChangedCallback, selectedInput, mode)
+    end
+
+    local function repaintModes()
+        local isToggle = mode == "Toggle"
+
+        tween(toggleCircle, CleanUI.Defaults.AnimationSoft, {
+            BackgroundTransparency = isToggle and 0.1 or 1,
+        })
+        tween(toggleDot, CleanUI.Defaults.AnimationSoft, {
+            BackgroundTransparency = isToggle and 0 or 1,
+        })
+        tween(holdCircle, CleanUI.Defaults.AnimationSoft, {
+            BackgroundTransparency = (not isToggle) and 0.1 or 1,
+        })
+        tween(holdDot, CleanUI.Defaults.AnimationSoft, {
+            BackgroundTransparency = (not isToggle) and 0 or 1,
+        })
+    end
+
+    local function clearOutsideConnections()
+        for _, connection in ipairs(outsideConnections) do
+            disconnectConnection(connection)
+        end
+        table.clear(outsideConnections)
+    end
+
+    local function closeMini()
+        if not miniOpen then
+            return
+        end
+
+        miniOpen = false
+        tween(mini, CleanUI.Defaults.AnimationFast, {
+            BackgroundTransparency = 1,
+            Size = UDim2.fromOffset(58, 58),
+        })
+
+        task.delay(0.13, function()
+            if not miniOpen then
+                mini.Visible = false
+                mini.Size = UDim2.fromOffset(70, 70)
+            end
+        end)
+    end
+
+    local function closeMenu()
+        if not menuOpen then
+            return
+        end
+
+        menuOpen = false
+        listening = false
+        acceptInput = false
+        keyButton.Text = keyDisplayName(selectedInput)
+        clearOutsideConnections()
+        tween(menu, CleanUI.Defaults.AnimationFast, {
+            Size = UDim2.fromOffset(304, 0),
+        })
+
+        task.delay(0.14, function()
+            if not menuOpen then
+                menu.Visible = false
+            end
+        end)
+    end
+
+    local function openMini()
+        closeMenu()
+        updateMiniPosition()
+        miniOpen = true
+        mini.Visible = true
+        mini.Size = UDim2.fromOffset(58, 58)
+        mini.BackgroundTransparency = 1
+        setZIndexRecursive(mini, 300)
+
+        tween(mini, CleanUI.Defaults.AnimationSoft, {
+            BackgroundTransparency = 0,
+            Size = UDim2.fromOffset(70, 70),
+        })
+
+        clearOutsideConnections()
+        task.delay(0.04, function()
+            if not miniOpen then
+                return
+            end
+
+            table.insert(outsideConnections, UserInputService.InputBegan:Connect(function(input, gameProcessed)
+                if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then
+                    return
+                end
+
+                local mouse = UserInputService:GetMouseLocation()
+                if not pointInGui(mouse, mini) and not pointInGui(mouse, anchorButton) then
+                    closeMini()
+                end
+            end))
+        end)
+    end
+
+    local function openMenu()
+        closeMini()
+        updateMenuPosition()
+        menuOpen = true
+        menu.Visible = true
+        menu.Size = UDim2.fromOffset(304, 0)
+        setZIndexRecursive(menu, 320)
+        repaintModes()
+
+        tween(menu, CleanUI.Defaults.AnimationNormal, {
+            Size = UDim2.fromOffset(304, 218),
+        })
+
+        clearOutsideConnections()
+        task.delay(0.04, function()
+            if not menuOpen then
+                return
+            end
+
+            table.insert(outsideConnections, UserInputService.InputBegan:Connect(function(input, gameProcessed)
+                if listening then
+                    return
+                end
+
+                if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then
+                    return
+                end
+
+                local mouse = UserInputService:GetMouseLocation()
+                if not pointInGui(mouse, menu) and not pointInGui(mouse, anchorButton) then
+                    closeMenu()
+                end
+            end))
+        end)
+    end
+
+    anchorButton.MouseEnter:Connect(function()
+        if not miniOpen and not menuOpen then
+            tween(anchorButton, CleanUI.Defaults.AnimationSoft, {
+                BackgroundTransparency = 0,
+                BackgroundColor3 = Color3.fromRGB(31, 35, 43),
+            })
+        end
+    end)
+
+    anchorButton.MouseLeave:Connect(function()
+        if not miniOpen and not menuOpen then
+            tween(anchorButton, CleanUI.Defaults.AnimationSoft, {
+                BackgroundTransparency = 1,
+            })
+        end
+    end)
+
+    anchorButton.MouseButton1Click:Connect(function()
+        if miniOpen then
+            closeMini()
+        else
+            openMini()
+        end
+    end)
+
+    miniButton.MouseButton1Click:Connect(function()
+        openMenu()
+    end)
+
+    keyButton.MouseEnter:Connect(function()
+        tween(keyButton, CleanUI.Defaults.AnimationSoft, { BackgroundColor3 = Color3.fromRGB(25, 32, 42) })
+    end)
+
+    keyButton.MouseLeave:Connect(function()
+        tween(keyButton, CleanUI.Defaults.AnimationSoft, { BackgroundColor3 = Color3.fromRGB(20, 26, 34) })
+    end)
+
+    keyButton.MouseButton1Click:Connect(function()
+        listening = true
+        acceptInput = false
+        keyButton.Text = "..."
+
+        task.delay(0.12, function()
+            if listening then
+                acceptInput = true
+            end
+        end)
+    end)
+
+    resetButton.MouseButton1Click:Connect(function()
+        selectedInput = Enum.UserInputType.MouseButton1
+        keyButton.Text = keyDisplayName(selectedInput)
+        fireChanged()
+    end)
+
+    toggleRow.MouseButton1Click:Connect(function()
+        mode = "Toggle"
+        repaintModes()
+        fireChanged()
+    end)
+
+    holdRow.MouseButton1Click:Connect(function()
+        mode = "Hold"
+        repaintModes()
+        fireChanged()
+    end)
+
+    listenConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if not listening or not acceptInput then
+            return
+        end
+
+        local bindValue = inputObjectToBind(input)
+        if not bindValue then
+            return
+        end
+
+        selectedInput = bindValue
+        listening = false
+        acceptInput = false
+        keyButton.Text = keyDisplayName(selectedInput)
+        fireChanged()
+    end)
+
+    window.Maid:Give(listenConnection)
+    window.Maid:Give(window.Main:GetPropertyChangedSignal("AbsolutePosition"):Connect(function()
+        if miniOpen then
+            updateMiniPosition()
+        end
+
+        if menuOpen then
+            updateMenuPosition()
+        end
+    end))
+
+    window.Maid:Give(window.Main:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+        if miniOpen then
+            updateMiniPosition()
+        end
+
+        if menuOpen then
+            updateMenuPosition()
+        end
+    end))
+
+    section.Bind = {
+        Set = function(_, inputValue: any, newMode: string?)
+            selectedInput = inputValue or selectedInput
+            if newMode == "Toggle" or newMode == "Hold" then
+                mode = newMode
+            end
+            keyButton.Text = keyDisplayName(selectedInput)
+            repaintModes()
+            fireChanged()
+        end,
+        Get = function()
+            return selectedInput, mode
+        end,
+        OnChanged = function(_, callback: any)
+            onChangedCallback = callback
+        end,
+    }
+
+    repaintModes()
+end
 
 function Tab:AddSection(title: string, description: string?)
     local card = create("Frame", {
@@ -1215,11 +1727,14 @@ function Tab:AddSection(title: string, description: string?)
         })
     end
 
-    local menuDots = create("TextLabel", {
-        Name = "Dots",
-        Size = UDim2.fromOffset(48, 30),
-        Position = UDim2.new(1, -70, 0, 0),
+    local menuDots = create("TextButton", {
+        Name = "BindDots",
+        Size = UDim2.fromOffset(48, 34),
+        Position = UDim2.new(1, -70, 0, -2),
+        BackgroundColor3 = CleanUI.Theme.Card3,
         BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        AutoButtonColor = false,
         Text = "...",
         TextColor3 = CleanUI.Theme.Text,
         TextSize = 24,
@@ -1227,6 +1742,8 @@ function Tab:AddSection(title: string, description: string?)
         TextXAlignment = Enum.TextXAlignment.Center,
         Parent = header,
     })
+
+    addCorner(menuDots, 12)
 
     local separator = buildSeparator(card)
 
@@ -1247,6 +1764,8 @@ function Tab:AddSection(title: string, description: string?)
             return Section[key]
         end,
     })
+
+    createHeaderBindMenu(section, menuDots)
 
     table.insert(self.Sections, section)
 
@@ -2345,9 +2864,10 @@ end
 -- Extra utility components
 ---------------------------------------------------------------------
 
-function Section:AddKeybind(text: string, defaultKey: Enum.KeyCode?, callback: any)
-    local selectedKey = defaultKey or Enum.KeyCode.RightShift
+function Section:AddKeybind(text: string, defaultKey: any?, callback: any)
+    local selectedKey = defaultKey or Enum.UserInputType.MouseButton1
     local listening = false
+    local acceptInput = false
 
     local row = create("Frame", {
         Name = text .. "KeybindRow",
@@ -2375,7 +2895,7 @@ function Section:AddKeybind(text: string, defaultKey: Enum.KeyCode?, callback: a
         BackgroundColor3 = CleanUI.Theme.Card2,
         BorderSizePixel = 0,
         AutoButtonColor = false,
-        Text = selectedKey.Name,
+        Text = keyDisplayName(selectedKey),
         TextColor3 = CleanUI.Theme.Text,
         TextSize = 16,
         Font = CleanUI.Defaults.FontMedium,
@@ -2387,25 +2907,36 @@ function Section:AddKeybind(text: string, defaultKey: Enum.KeyCode?, callback: a
 
     button.MouseButton1Click:Connect(function()
         listening = true
-        button.Text = "Press key..."
+        acceptInput = false
+        button.Text = "..."
+
+        task.delay(0.12, function()
+            if listening then
+                acceptInput = true
+            end
+        end)
     end)
 
-    UserInputService.InputBegan:Connect(function(input, gameProcessed)
-        if listening and input.UserInputType == Enum.UserInputType.Keyboard then
-            listening = false
-            selectedKey = input.KeyCode
-            button.Text = selectedKey.Name
-            safeCallback(callback, selectedKey)
+    self.Tab.Window.Maid:Give(UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if listening and acceptInput then
+            local bindValue = inputObjectToBind(input)
+            if bindValue then
+                listening = false
+                acceptInput = false
+                selectedKey = bindValue
+                button.Text = keyDisplayName(selectedKey)
+                safeCallback(callback, selectedKey)
+            end
         end
-    end)
+    end))
 
-    self:_registerRow(row, text .. " keybind " .. selectedKey.Name)
+    self:_registerRow(row, text .. " keybind " .. keyDisplayName(selectedKey))
 
     local api = {}
 
-    function api:Set(key: Enum.KeyCode)
+    function api:Set(key: any)
         selectedKey = key
-        button.Text = selectedKey.Name
+        button.Text = keyDisplayName(selectedKey)
         safeCallback(callback, selectedKey)
     end
 
