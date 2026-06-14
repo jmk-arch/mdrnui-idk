@@ -40,7 +40,7 @@ local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
 local CleanUI = {}
 CleanUI.__index = CleanUI
-CleanUI.Version = "1.0.0-one-file"
+CleanUI.Version = "1.1.0-smooth-corners"
 CleanUI.IsUiOnly = true
 
 ---------------------------------------------------------------------
@@ -96,6 +96,8 @@ CleanUI.Defaults = {
     AnimationFast = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
     AnimationNormal = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
     AnimationSlow = TweenInfo.new(0.28, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+    AnimationPage = TweenInfo.new(0.32, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
+    AnimationSoft = TweenInfo.new(0.22, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
 }
 
 ---------------------------------------------------------------------
@@ -192,6 +194,30 @@ local function addFlex(parent: Instance)
         FlexMode = Enum.UIFlexMode.Fill,
         Parent = parent,
     })
+end
+
+local function canGroupFade(instance: Instance)
+    return pcall(function()
+        local _ = (instance :: any).GroupTransparency
+    end)
+end
+
+local function setGroupFade(instance: Instance, value: number)
+    pcall(function()
+        (instance :: any).GroupTransparency = value
+    end)
+end
+
+local function tweenPageGroup(instance: Instance, position: UDim2, transparency: number)
+    local props: {[string]: any} = {
+        Position = position,
+    }
+
+    if canGroupFade(instance) then
+        props.GroupTransparency = transparency
+    end
+
+    return tween(instance, CleanUI.Defaults.AnimationPage, props)
 end
 
 local function formatValue(value: number, step: number?, suffix: string?)
@@ -402,7 +428,22 @@ function CleanUI:CreateWindow(options: {[string]: any}?)
         Size = UDim2.new(0, CleanUI.Defaults.SidebarWidth, 1, 0),
         BackgroundColor3 = CleanUI.Theme.Sidebar,
         BorderSizePixel = 0,
+        ClipsDescendants = false,
         Parent = main,
+    })
+
+    -- UICorner does not always mask child frames perfectly, especially on the
+    -- outer window edges. The sidebar uses a rounded base for the outside edge
+    -- and a small square fill on the inside edge so the left window corners stay clean.
+    addCorner(sidebar, CleanUI.Defaults.WindowCorner)
+
+    local sidebarSquareFill = create("Frame", {
+        Name = "SidebarSquareFill",
+        Size = UDim2.new(0, CleanUI.Defaults.WindowCorner + 6, 1, 0),
+        Position = UDim2.new(1, -(CleanUI.Defaults.WindowCorner + 6), 0, 0),
+        BackgroundColor3 = CleanUI.Theme.Sidebar,
+        BorderSizePixel = 0,
+        Parent = sidebar,
     })
 
     local sideDivider = create("Frame", {
@@ -528,6 +569,7 @@ function CleanUI:CreateWindow(options: {[string]: any}?)
         Size = UDim2.new(1, 0, 1, -CleanUI.Defaults.TopbarHeight),
         Position = UDim2.fromOffset(0, CleanUI.Defaults.TopbarHeight),
         BackgroundTransparency = 1,
+        ClipsDescendants = true,
         Parent = contentRoot,
     })
 
@@ -729,6 +771,18 @@ function Window:CreateTab(name: string)
     addCorner(button, 10)
     addPadding(button, 14, 0, 0, 0)
 
+    local pageGroup = create("CanvasGroup", {
+        Name = name .. "PageGroup",
+        Size = UDim2.new(1, 0, 1, 0),
+        Position = UDim2.fromOffset(0, 0),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        ClipsDescendants = true,
+        GroupTransparency = 1,
+        Visible = false,
+        Parent = self.Pages,
+    })
+
     local page = create("ScrollingFrame", {
         Name = name .. "Page",
         Size = UDim2.new(1, 0, 1, 0),
@@ -737,8 +791,8 @@ function Window:CreateTab(name: string)
         ScrollBarThickness = 0,
         ScrollingDirection = Enum.ScrollingDirection.Y,
         CanvasSize = UDim2.fromOffset(0, 0),
-        Visible = false,
-        Parent = self.Pages,
+        Visible = true,
+        Parent = pageGroup,
     })
 
     addPadding(page, 26, 26, 22, 24)
@@ -753,9 +807,11 @@ function Window:CreateTab(name: string)
         Window = self,
         Name = name,
         Button = button,
+        PageGroup = pageGroup,
         Page = page,
         Layout = layout,
         Sections = {},
+        TransitionToken = 0,
     }
 
     setmetatable(tab, {
@@ -795,17 +851,56 @@ function Window:CreateTab(name: string)
 end
 
 function Window:SelectTab(tab: any)
-    for _, other in ipairs(self.Tabs) do
-        other.Page.Visible = false
-        tween(other.Button, CleanUI.Defaults.AnimationFast, {
-            BackgroundTransparency = 1,
-        })
+    if not tab or self.CurrentTab == tab then
+        return
     end
 
-    tab.Page.Visible = true
-    tab.Button.BackgroundTransparency = 0
-    tab.Button.BackgroundColor3 = CleanUI.Theme.Selected
+    local oldTab = self.CurrentTab
     self.CurrentTab = tab
+
+    for _, other in ipairs(self.Tabs) do
+        if other ~= tab and other ~= oldTab then
+            other.PageGroup.Visible = false
+            other.PageGroup.Position = UDim2.fromOffset(0, 0)
+            setGroupFade(other.PageGroup, 1)
+            tween(other.Button, CleanUI.Defaults.AnimationFast, {
+                BackgroundTransparency = 1,
+            })
+        end
+    end
+
+    if oldTab then
+        oldTab.TransitionToken += 1
+        local token = oldTab.TransitionToken
+
+        tween(oldTab.Button, CleanUI.Defaults.AnimationFast, {
+            BackgroundTransparency = 1,
+        })
+
+        oldTab.PageGroup.Visible = true
+        tweenPageGroup(oldTab.PageGroup, UDim2.fromOffset(-22, 0), 1)
+
+        task.delay(0.34, function()
+            if oldTab.TransitionToken == token and self.CurrentTab ~= oldTab then
+                oldTab.PageGroup.Visible = false
+                oldTab.PageGroup.Position = UDim2.fromOffset(0, 0)
+                setGroupFade(oldTab.PageGroup, 1)
+            end
+        end)
+    end
+
+    tab.TransitionToken += 1
+    tab.PageGroup.Visible = true
+    tab.PageGroup.Position = oldTab and UDim2.fromOffset(22, 0) or UDim2.fromOffset(0, 0)
+    setGroupFade(tab.PageGroup, oldTab and 1 or 0)
+
+    tab.Button.BackgroundColor3 = CleanUI.Theme.Selected
+    tween(tab.Button, CleanUI.Defaults.AnimationFast, {
+        BackgroundTransparency = 0,
+        BackgroundColor3 = CleanUI.Theme.Selected,
+    })
+
+    tweenPageGroup(tab.PageGroup, UDim2.fromOffset(0, 0), 0)
     self:_applySearch()
 end
 
@@ -1089,8 +1184,8 @@ function Section:AddToggle(text: string, defaultValue: boolean?, callback: any)
             switch.BackgroundColor3 = switchColor
             knob.Position = knobPos
         else
-            tween(switch, CleanUI.Defaults.AnimationNormal, { BackgroundColor3 = switchColor })
-            tween(knob, CleanUI.Defaults.AnimationNormal, { Position = knobPos })
+            tween(switch, CleanUI.Defaults.AnimationSoft, { BackgroundColor3 = switchColor })
+            tween(knob, CleanUI.Defaults.AnimationSoft, { Position = knobPos })
         end
     end
 
